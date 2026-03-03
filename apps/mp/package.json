@@ -1,0 +1,22 @@
+{
+  "name": "mp",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build:weapp": "taro build --type weapp",
+    "dev:weapp": "taro build --type weapp --watch"
+  },
+  "dependencies": {
+    "@healthcare/shared": "*",
+    "@tarojs/components": "3.6.22",
+    "@tarojs/runtime": "3.6.22",
+    "@tarojs/taro": "3.6.22",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0"
+  },
+  "devDependencies": {
+    "@tarojs/cli": "3.6.22",
+    "@types/react": "^18.0.0",
+    "typescript": "^5.0.0"
+  }
+}

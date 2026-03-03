@@ -1,0 +1,38 @@
+// Design Tokens (共享设计语言)
+
+// Colors
+$primary-client: #10b981;    // 翡翠绿 - 健康与成长
+$primary-practitioner: #1e293b; // 深石板色 - 专业与稳重
+$bg-main: #f8fafc;
+$text-main: #1e293b;
+$text-secondary: #64748b;
+$white: #ffffff;
+$danger: #ef4444;
+$warning: #f59e0b;
+
+// Spacing & Layout
+$spacing-sm: 12rpx;
+$spacing-md: 24rpx;
+$spacing-lg: 40rpx;
+$radius-sm: 12rpx;
+$radius-md: 24rpx;
+$radius-lg: 40rpx;
+
+// Shadows
+$shadow-sm: 0 4rpx 12rpx rgba(0, 0, 0, 0.05);
+$shadow-md: 0 10rpx 30rpx rgba(0, 0, 0, 0.08);
+
+// Mixins
+@mixin card-base {
+  background: $white;
+  border-radius: $radius-md;
+  padding: $spacing-md;
+  box-shadow: $shadow-sm;
+  margin-bottom: $spacing-md;
+}
+
+@mixin flex-between {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
