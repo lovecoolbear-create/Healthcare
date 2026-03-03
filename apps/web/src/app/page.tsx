@@ -1435,7 +1435,7 @@ function DashboardContent() {
       case 'templates':
         if (!currentProtocol) {
           const emptyProtocolsCount = protocols.filter(p => 
-            (!p.name || p.name === '新调理配方 SOP' || p.name.trim() === '') && 
+            (!p.name || p.name === '新健康调理方案' || p.name.trim() === '') && 
             p.phases.length === 0 && 
             p.triggers.length === 0
           ).length;
@@ -2110,7 +2110,7 @@ function DashboardContent() {
                 <h3 className="text-xl font-black text-slate-800 mb-8">健康调理方案有效性排行</h3>
                 <div className="space-y-6">
                   {[
-                    { name: '深度肠道修复 SOP', clients: 45, score: 94, trend: 'up' },
+                    { name: '深度肠道修复方案', clients: 45, score: 94, trend: 'up' },
                     { name: '压力性失眠调理', clients: 32, score: 88, trend: 'up' },
                     { name: '女性代谢平衡方案', clients: 28, score: 82, trend: 'down' },
                     { name: '高强度脑力补剂组', clients: 15, score: 76, trend: 'up' },
@@ -2209,7 +2209,7 @@ function DashboardContent() {
               {activeTab === 'dashboard' && '工作台 Dashboard'}
               {activeTab === 'clients' && '客户 360° 动态档案'}
               {activeTab === 'products' && '产品与成分元数据库'}
-              {activeTab === 'templates' && '健康调理配方库'}
+              {activeTab === 'templates' && '健康调理方案库'}
               {activeTab === 'triggers' && '全局干预触发器配置 (System Triggers)'}
               {activeTab === 'reports' && '数据分析报告 (Data Reports)'}
               {activeTab === 'knowledge' && '营养学知识库 (Nutrition Knowledge)'}
