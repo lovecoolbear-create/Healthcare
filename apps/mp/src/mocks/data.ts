@@ -386,9 +386,9 @@ export const mockProtocol: Protocol = {
       order: 1,
       duration_days: 14,
       actions: [
-        { id: 'act-1', phase_id: 'phase-1', product_id: 'p-1', time_slot: 'morning', dosage: 2, timing_tag: 'empty_stomach' },
-        { id: 'act-2', phase_id: 'phase-1', product_id: 'p-2', time_slot: 'noon', dosage: 2, timing_tag: 'with_meal' },
-        { id: 'act-3', phase_id: 'phase-1', product_id: 'p-3', time_slot: 'evening', dosage: 2, timing_tag: 'with_meal' },
+        { id: 'act-1', phase_id: 'phase-1', product_id: 'p-1', frequency_per_day: 1, dosage_per_time: '2粒', timing_tag: 'empty_stomach' },
+        { id: 'act-2', phase_id: 'phase-1', product_id: 'p-2', frequency_per_day: 1, dosage_per_time: '2粒', timing_tag: 'with_meal' },
+        { id: 'act-3', phase_id: 'phase-1', product_id: 'p-3', frequency_per_day: 1, dosage_per_time: '2粒', timing_tag: 'with_meal' },
       ]
     },
     {
@@ -398,9 +398,9 @@ export const mockProtocol: Protocol = {
       order: 2,
       duration_days: 56,
       actions: [
-        { id: 'act-4', phase_id: 'phase-2', product_id: 'p-1', time_slot: 'morning', dosage: 1, timing_tag: 'empty_stomach' },
-        { id: 'act-5', phase_id: 'phase-2', product_id: 'p-2', time_slot: 'noon', dosage: 1, timing_tag: 'with_meal' },
-        { id: 'act-6', phase_id: 'phase-2', product_id: 'p-3', time_slot: 'evening', dosage: 1, timing_tag: 'with_meal' },
+        { id: 'act-4', phase_id: 'phase-2', product_id: 'p-1', frequency_per_day: 1, dosage_per_time: '1粒', timing_tag: 'empty_stomach' },
+        { id: 'act-5', phase_id: 'phase-2', product_id: 'p-2', frequency_per_day: 1, dosage_per_time: '1粒', timing_tag: 'with_meal' },
+        { id: 'act-6', phase_id: 'phase-2', product_id: 'p-3', frequency_per_day: 1, dosage_per_time: '1粒', timing_tag: 'with_meal' },
       ]
     }
   ],

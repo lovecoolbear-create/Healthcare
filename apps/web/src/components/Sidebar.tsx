@@ -95,7 +95,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange }) => {
           className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${isTabActive('templates') ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/20' : 'hover:bg-slate-800'}`}
         >
           <Layers className="w-5 h-5" />
-          配方库
+          健康调理配方库
         </button>
         
         <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-4 mt-8 mb-2">系统支撑</div>

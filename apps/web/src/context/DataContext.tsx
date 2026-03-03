@@ -36,6 +36,7 @@ interface DataContextType {
   products: Product[];
   triggers: ProtocolTrigger[];
   protocols: Protocol[];
+  ingredients: Ingredient[]; // 新增：成分库状态
   importBatches: ImportBatch[]; // 新增：导入批次记录
   userTasks: UserTask[]; // 新增：手动创建的待办任务
   addClient: (client: Client) => Promise<void>;
@@ -44,6 +45,7 @@ interface DataContextType {
   addProduct: (product: Product) => Promise<void>;
   updateProduct: (product: Product, partial?: Partial<Product>) => Promise<void>;
   deleteProduct: (id: string) => Promise<void>;
+  addIngredient: (ingredient: Ingredient) => Promise<void>; // 新增：添加成分
   bulkAddClients: (clients: Client[], batchId: string) => Promise<void>;
   bulkAddProducts: (products: Product[], batchId: string) => Promise<void>;
   rollbackBatch: (batchId: string) => Promise<void>;
@@ -67,6 +69,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [products, setProducts] = useState<Product[]>([]);
   const [triggers, setTriggers] = useState<ProtocolTrigger[]>([]);
   const [protocols, setProtocols] = useState<Protocol[]>([]);
+  const [ingredients, setIngredients] = useState<Ingredient[]>([]); // 新增状态
   const [importBatches, setImportBatches] = useState<ImportBatch[]>([]); // 新增状态
   const [userTasks, setUserTasks] = useState<UserTask[]>([]); // 新增状态
   const [isLoaded, setIsLoaded] = useState(false);
@@ -80,6 +83,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           cloudProducts, 
           cloudTriggers, 
           cloudProtocols,
+          cloudIngredients,
           cloudBatches,
           cloudTasks
         ] = await Promise.all([
@@ -87,6 +91,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           cloud.getCollection<Product>('products'),
           cloud.getCollection<ProtocolTrigger>('triggers'),
           cloud.getCollection<Protocol>('protocols'),
+          cloud.getCollection<Ingredient>('ingredients'),
           cloud.getCollection<ImportBatch>('import_batches'),
           cloud.getCollection<UserTask>('user_tasks'),
         ]);
@@ -119,6 +124,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           setProtocols(stored ? JSON.parse(stored) : [mockProtocol]);
         }
 
+        if (cloudIngredients.length > 0) {
+          setIngredients(cloudIngredients);
+        } else {
+          const stored = localStorage.getItem('hc_ingredients');
+          setIngredients(stored ? JSON.parse(stored) : mockIngredients);
+        }
+
         if (cloudBatches.length > 0) {
           setImportBatches(cloudBatches);
         } else {
@@ -134,7 +146,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         }
       } catch (error) {
         console.error('初始化云端数据失败，回退到本地存储:', error);
-        // 回退逻辑已经在 Promise.all 之后的部分处理了，或者这里可以加个通用的 localStorage 加载
       } finally {
         setIsLoaded(true);
       }
@@ -159,6 +170,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (isLoaded) localStorage.setItem('hc_protocols', JSON.stringify(protocols));
   }, [protocols, isLoaded]);
+
+  useEffect(() => {
+    if (isLoaded) localStorage.setItem('hc_ingredients', JSON.stringify(ingredients));
+  }, [ingredients, isLoaded]);
 
   useEffect(() => {
     if (isLoaded) localStorage.setItem('hc_import_batches', JSON.stringify(importBatches));
@@ -263,6 +278,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     await cloud.deleteItem('user_tasks', id);
   };
 
+  const addIngredient = async (ingredient: Ingredient) => {
+    setIngredients(prev => [ingredient, ...prev]);
+    await cloud.addItem('ingredients', ingredient);
+  };
+
   const addUserLog = async (clientId: string, logData: Omit<FollowUpNote, 'id' | 'client_id' | 'practitioner_id' | 'created_at'>, tags?: string[]) => {
     const client = clients.find(c => c.id === clientId);
     if (!client) return;
@@ -335,6 +355,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       products, 
       triggers, 
       protocols, 
+      ingredients,
       importBatches,
       userTasks,
       addClient,
@@ -343,6 +364,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       addProduct,
       updateProduct,
       deleteProduct,
+      addIngredient,
       bulkAddClients,
       bulkAddProducts,
       rollbackBatch,

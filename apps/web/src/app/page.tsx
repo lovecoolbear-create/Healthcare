@@ -52,6 +52,7 @@ function DashboardContent() {
     products, addProduct, updateProduct, deleteProduct, bulkAddProducts,
     triggers, addTrigger, updateTrigger, deleteTrigger,
     protocols, addProtocol, updateProtocol, deleteProtocol,
+    ingredients, addIngredient,
     importBatches, rollbackBatch,
     userTasks, addUserTask, updateUserTask, addUserLog
   } = useData();
@@ -645,9 +646,10 @@ function DashboardContent() {
       id: `act-${Date.now()}`,
       phase_id: phaseId,
       product_id: products[0]?.id || 'prod-001', // Default to first product
-      time_slot: 'morning',
-      dosage: 1,
-      timing_tag: 'with_meal'
+      frequency_per_day: 1,
+      dosage_per_time: products[0]?.dosage_unit || '1粒',
+      timing_tag: 'with_meal',
+      usage_instructions: ''
     };
 
     const newPhases = [...currentProtocol.phases];
@@ -681,8 +683,6 @@ function DashboardContent() {
       return 0;
     });
   }, [clients, searchQuery, allAlerts]);
-
-  const { ingredients } = { ingredients: mockIngredients };
 
   // --- Dashboard 欢迎区域增强数据 (Enhanced Welcome Metrics) ---
   const todayTotalTodos = allAlerts.length;
@@ -1560,7 +1560,21 @@ function DashboardContent() {
                         <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded uppercase tracking-widest">Phase {idx + 1}</span>
                         <h4 className="text-xl font-bold text-slate-800">{phase.name}</h4>
                         <span className="text-sm text-slate-400 font-medium flex items-center gap-1">
-                          <Calendar className="w-4 h-4" /> 持续 {phase.duration_days} 天
+                          <Calendar className="w-4 h-4" /> 持续 
+                          <input 
+                            type="number" 
+                            value={phase.duration_days} 
+                            onChange={async (e) => {
+                              const newDuration = parseInt(e.target.value) || 0;
+                              const updatedPhases = currentProtocol.phases.map(p => 
+                                p.id === phase.id ? { ...p, duration_days: newDuration } : p
+                              );
+                              const updatedProtocol = { ...currentProtocol, phases: updatedPhases };
+                              setCurrentProtocol(updatedProtocol);
+                              await updateProtocol(updatedProtocol, { phases: updatedPhases });
+                            }}
+                            className="w-12 bg-transparent border-b border-slate-200 focus:border-emerald-500 focus:ring-0 p-0 text-center font-bold text-slate-700"
+                          /> 天
                         </span>
                       </div>
 
@@ -1573,9 +1587,46 @@ function DashboardContent() {
                                 <Package className="w-5 h-5 text-slate-400" />
                               </div>
                               <div className="flex-1">
-                                <div className="text-sm font-bold text-slate-700">{product?.name || '未知产品'}</div>
-                                <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                                  {action.dosage}{product?.dosage_unit || '粒'} / {action.timing_tag === 'with_meal' ? '随餐' : action.timing_tag === 'empty_stomach' ? '空腹' : '餐后'}
+                                <div className="text-sm font-bold text-slate-700 mb-1">{product?.name || '未知产品'}</div>
+                                <div className="flex items-center gap-3">
+                                  <div className="flex items-center gap-1 bg-white border border-slate-100 px-2 py-0.5 rounded-lg shadow-sm">
+                                    <input 
+                                      type="number" 
+                                      value={action.dosage} 
+                                      onChange={async (e) => {
+                                        const newDosage = parseFloat(e.target.value) || 0;
+                                        const newPhases = [...currentProtocol.phases];
+                                        const pIdx = newPhases.findIndex(p => p.id === phase.id);
+                                        const aIdx = newPhases[pIdx].actions.findIndex(a => a.id === action.id);
+                                        newPhases[pIdx].actions[aIdx] = { ...action, dosage: newDosage };
+                                        const updatedProtocol = { ...currentProtocol, phases: newPhases };
+                                        setCurrentProtocol(updatedProtocol);
+                                        await updateProtocol(updatedProtocol, { phases: newPhases });
+                                      }}
+                                      className="w-8 text-center text-[10px] font-bold text-slate-700 bg-transparent border-none p-0 focus:ring-0"
+                                    />
+                                    <span className="text-[10px] text-slate-400 font-bold">{product?.dosage_unit || '粒'}</span>
+                                  </div>
+                                  
+                                  <select 
+                                    value={action.timing_tag}
+                                    onChange={async (e) => {
+                                      const newTiming = e.target.value as any;
+                                      const newPhases = [...currentProtocol.phases];
+                                      const pIdx = newPhases.findIndex(p => p.id === phase.id);
+                                      const aIdx = newPhases[pIdx].actions.findIndex(a => a.id === action.id);
+                                      newPhases[pIdx].actions[aIdx] = { ...action, timing_tag: newTiming };
+                                      const updatedProtocol = { ...currentProtocol, phases: newPhases };
+                                      setCurrentProtocol(updatedProtocol);
+                                      await updateProtocol(updatedProtocol, { phases: newPhases });
+                                    }}
+                                    className="text-[10px] font-bold text-slate-500 bg-white border border-slate-100 px-2 py-0.5 rounded-lg shadow-sm focus:ring-0 outline-none"
+                                  >
+                                    <option value="with_meal">随餐</option>
+                                    <option value="empty_stomach">空腹</option>
+                                    <option value="after_meal">餐后</option>
+                                    <option value="before_meal">餐前</option>
+                                  </select>
                                 </div>
                               </div>
                             </div>
@@ -1586,7 +1637,7 @@ function DashboardContent() {
                           className="border-2 border-dashed border-slate-200 rounded-2xl p-4 flex items-center justify-center gap-2 hover:bg-slate-50 hover:border-emerald-300 transition-all group min-h-[80px]"
                         >
                           <Plus className="w-5 h-5 text-slate-300 group-hover:text-emerald-500 transition-colors" />
-                          <span className="text-xs font-bold text-slate-400 group-hover:text-emerald-600 transition-colors">添加动作</span>
+                          <span className="text-xs font-bold text-slate-400 group-hover:text-emerald-600 transition-colors">添加产品</span>
                         </button>
                       </div>
                     </div>
@@ -2010,7 +2061,7 @@ function DashboardContent() {
             {/* 3. 方案有效性排行 (Top Protocols) */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm">
-                <h3 className="text-xl font-black text-slate-800 mb-8">调理方案有效性排行 (Top Protocols)</h3>
+                <h3 className="text-xl font-black text-slate-800 mb-8">健康调理方案有效性排行</h3>
                 <div className="space-y-6">
                   {[
                     { name: '深度肠道修复 SOP', clients: 45, score: 94, trend: 'up' },
@@ -2112,7 +2163,7 @@ function DashboardContent() {
               {activeTab === 'dashboard' && '工作台 Dashboard'}
               {activeTab === 'clients' && '客户 360° 动态档案'}
               {activeTab === 'products' && '产品与成分元数据库'}
-              {activeTab === 'templates' && 'SOP 方案与配方库'}
+              {activeTab === 'templates' && '健康调理配方库'}
               {activeTab === 'triggers' && '全局干预触发器配置 (System Triggers)'}
               {activeTab === 'reports' && '数据分析报告 (Data Reports)'}
               {activeTab === 'knowledge' && '营养学知识库 (Nutrition Knowledge)'}
@@ -2848,27 +2899,41 @@ function DashboardContent() {
                     {/* 搜索结果下拉框 */}
                     {ingredientSearch && (
                       <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-slate-100 z-20 max-h-48 overflow-y-auto p-2">
-                        {ingredients.filter(ing => ing.name.toLowerCase().includes(ingredientSearch.toLowerCase())).length > 0 ? (
-                          ingredients
-                            .filter(ing => ing.name.toLowerCase().includes(ingredientSearch.toLowerCase()))
-                            .map(ing => (
-                              <button
-                                key={ing.id}
-                                type="button"
-                                onClick={() => {
-                                  if (!selectedIngredients.find(s => s.ingredient_id === ing.id)) {
-                                    setSelectedIngredients(prev => [...prev, { ingredient_id: ing.id, amount_per_unit: 0, unit: 'mg' }]);
-                                  }
-                                  setIngredientSearch('');
-                                }}
-                                className="w-full text-left px-4 py-3 hover:bg-slate-50 rounded-xl transition-colors flex items-center justify-between group"
-                              >
-                                <span className="text-sm font-medium text-slate-700">{ing.name}</span>
-                                <Plus className="w-4 h-4 text-slate-300 group-hover:text-emerald-500" />
-                              </button>
-                            ))
-                        ) : (
-                          <div className="px-4 py-8 text-center text-slate-400 text-xs">未找到相关成分</div>
+                        {ingredients.filter(ing => ing.name.toLowerCase().includes(ingredientSearch.toLowerCase())).map(ing => (
+                          <button
+                            key={ing.id}
+                            type="button"
+                            onClick={() => {
+                              if (!selectedIngredients.find(s => s.ingredient_id === ing.id)) {
+                                setSelectedIngredients(prev => [...prev, { ingredient_id: ing.id, amount_per_unit: 0, unit: 'mg' }]);
+                              }
+                              setIngredientSearch('');
+                            }}
+                            className="w-full text-left px-4 py-3 hover:bg-slate-50 rounded-xl transition-colors flex items-center justify-between group"
+                          >
+                            <span className="text-sm font-medium text-slate-700">{ing.name}</span>
+                            <Plus className="w-4 h-4 text-slate-300 group-hover:text-emerald-500" />
+                          </button>
+                        ))}
+                        {/* 允许添加自定义成分 */}
+                        {!ingredients.some(ing => ing.name.toLowerCase() === ingredientSearch.toLowerCase()) && (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const newId = `custom-${Date.now()}`;
+                              const newIngredient = { id: newId, name: ingredientSearch, description: '自定义添加' };
+                              await addIngredient(newIngredient);
+                              setSelectedIngredients(prev => [...prev, { ingredient_id: newId, amount_per_unit: 0, unit: 'mg' }]);
+                              setIngredientSearch('');
+                            }}
+                            className="w-full text-left px-4 py-3 bg-emerald-50 hover:bg-emerald-100 rounded-xl transition-colors flex items-center justify-between group border border-dashed border-emerald-200"
+                          >
+                            <div className="flex flex-col">
+                              <span className="text-sm font-bold text-emerald-700">添加新成分: "{ingredientSearch}"</span>
+                              <span className="text-[10px] text-emerald-600">数据库未找到，点击直接创建</span>
+                            </div>
+                            <Plus className="w-4 h-4 text-emerald-500" />
+                          </button>
                         )}
                       </div>
                     )}

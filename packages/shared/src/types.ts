@@ -222,10 +222,16 @@ export interface ProtocolAction {
   id: string;
   phase_id: string;
   product_id: string;
-  time_slot: TimeSlot;
-  dosage: number; // 剂量，支持根据公式自动计算
-  dosage_formula?: string; // 如：每 10kg 体重 1 粒
-  timing_tag: 'with_meal' | 'empty_stomach' | 'before_bed' | 'after_meal'; // 服用标签
+  
+  // 使用方法 (Usage Method)
+  frequency_per_day: number; // 每天服用几次
+  dosage_per_time: string;   // 每次服用量 (如: "1粒", "5ml")
+  timing_tag: 'with_meal' | 'empty_stomach' | 'before_bed' | 'after_meal' | 'any_time'; // 服用时间标签
+  usage_instructions?: string; // 自定义备注/书写使用方法
+  
+  // 兼容性字段 (可选保留)
+  time_slot?: TimeSlot;
+  dosage?: number;
 }
 
 export interface Protocol {

@@ -79,12 +79,14 @@ interface SortablePhaseProps {
   phase: ProtocolPhase;
   index: number;
   onRemove?: () => void;
+  onUpdate?: (updates: Partial<ProtocolPhase>) => void;
   onAddAction?: () => void;
   onRemoveAction?: (actionId: string) => void;
+  onUpdateAction?: (actionId: string, updates: Partial<ProtocolAction>) => void;
   isOverlay?: boolean;
 }
 
-const SortablePhase = ({ phase, index, onRemove, onAddAction, onRemoveAction, isOverlay }: SortablePhaseProps) => {
+const SortablePhase = ({ phase, index, onRemove, onUpdate, onAddAction, onRemoveAction, onUpdateAction, isOverlay }: SortablePhaseProps) => {
   const {
     attributes,
     listeners,
@@ -120,13 +122,20 @@ const SortablePhase = ({ phase, index, onRemove, onAddAction, onRemoveAction, is
           <input 
             type="text" 
             value={phase.name}
-            className="text-2xl font-black text-slate-800 tracking-tight bg-transparent border-none focus:ring-0 p-0 w-auto"
-            onChange={() => {}} // Handle change if needed
+            className="text-2xl font-black text-slate-800 tracking-tight bg-transparent border-none focus:ring-2 focus:ring-emerald-500/20 rounded-lg p-1 w-64"
+            onChange={(e) => onUpdate?.({ name: e.target.value })}
           />
           <div className="flex items-center gap-4">
-            <span className="px-3 py-1.5 bg-slate-100 text-slate-500 text-[10px] font-black rounded-xl flex items-center gap-2 border border-slate-200/50">
-              <Calendar className="w-3.5 h-3.5" /> {phase.duration_days} 天周期
-            </span>
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-500 text-[10px] font-black rounded-xl border border-slate-200/50">
+              <Calendar className="w-3.5 h-3.5" />
+              <input 
+                type="number"
+                value={phase.duration_days}
+                onChange={(e) => onUpdate?.({ duration_days: parseInt(e.target.value) || 0 })}
+                className="w-12 bg-transparent border-none p-0 focus:ring-0 text-center font-black"
+              />
+              <span>天周期</span>
+            </div>
           </div>
         </div>
         <button 
@@ -147,6 +156,7 @@ const SortablePhase = ({ phase, index, onRemove, onAddAction, onRemoveAction, is
               key={action.id} 
               action={action} 
               onRemove={() => onRemoveAction?.(action.id)} 
+              onUpdate={(updates) => onUpdateAction?.(action.id, updates)}
             />
           ))}
         </SortableContext>
@@ -167,9 +177,10 @@ const SortablePhase = ({ phase, index, onRemove, onAddAction, onRemoveAction, is
 interface SortableActionProps {
   action: ProtocolAction;
   onRemove: () => void;
+  onUpdate?: (updates: Partial<ProtocolAction>) => void;
 }
 
-const SortableAction = ({ action, onRemove }: SortableActionProps) => {
+const SortableAction = ({ action, onRemove, onUpdate }: SortableActionProps) => {
   const { products } = useData();
   const {
     attributes,
@@ -192,46 +203,94 @@ const SortableAction = ({ action, onRemove }: SortableActionProps) => {
     <div 
       ref={setNodeRef} 
       style={style} 
-      className="bg-slate-50/50 border border-slate-100 rounded-3xl p-6 flex items-start gap-5 hover:bg-white hover:shadow-xl hover:border-emerald-100 transition-all duration-300 group/action"
+      className="bg-slate-50/50 border border-slate-100 rounded-3xl p-6 flex flex-col gap-4 hover:bg-white hover:shadow-xl hover:border-emerald-100 transition-all duration-300 group/action"
     >
-      <div 
-        {...attributes} 
-        {...listeners}
-        className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center border border-slate-100 shadow-sm group-hover/action:scale-110 transition-transform cursor-grab active:cursor-grabbing shrink-0"
-      >
-        <GripVertical className="w-4 h-4 text-slate-200 absolute top-1" />
-        <Package className="w-6 h-6 text-slate-300" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex justify-between items-start mb-2">
-          <div className="text-base font-black text-slate-800 truncate pr-2">{product?.name}</div>
-          <div className="flex items-center gap-2 shrink-0">
-            <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-widest ${
-              action.time_slot === 'morning' ? 'bg-amber-100 text-amber-700' :
-              action.time_slot === 'noon' ? 'bg-orange-100 text-orange-700' :
-              action.time_slot === 'evening' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-800 text-white'
-            }`}>
-              {action.time_slot === 'morning' && '晨起'}
-              {action.time_slot === 'noon' && '午间'}
-              {action.time_slot === 'evening' && '晚间'}
-              {action.time_slot === 'night' && '睡前'}
-            </span>
+      <div className="flex items-start gap-5">
+        <div 
+          {...attributes} 
+          {...listeners}
+          className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center border border-slate-100 shadow-sm group-hover/action:scale-110 transition-transform cursor-grab active:cursor-grabbing shrink-0"
+        >
+          <GripVertical className="w-4 h-4 text-slate-200 absolute top-1" />
+          <Package className="w-6 h-6 text-slate-300" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex justify-between items-start mb-2">
+            <select 
+              value={action.product_id}
+              onChange={(e) => onUpdate?.({ product_id: e.target.value })}
+              className="text-base font-black text-slate-800 bg-transparent border-none focus:ring-0 p-0 w-full cursor-pointer hover:text-emerald-600 transition-colors"
+            >
+              {products.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
             <button 
               onClick={onRemove}
-              className="p-1 text-slate-300 hover:text-rose-500 opacity-0 group-hover/action:opacity-100 transition-all"
+              className="p-1 text-slate-300 hover:text-rose-500 opacity-0 group-hover/action:opacity-100 transition-all shrink-0"
             >
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
+          
+          <div className="grid grid-cols-2 gap-3 mt-4">
+            <div className="space-y-1">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">服用频率</label>
+              <div className="flex items-center gap-2">
+                <input 
+                  type="number"
+                  value={action.frequency_per_day || 1}
+                  onChange={(e) => onUpdate?.({ frequency_per_day: parseInt(e.target.value) || 1 })}
+                  className="w-12 bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold focus:ring-2 focus:ring-emerald-500/20 outline-none"
+                />
+                <span className="text-[10px] font-bold text-slate-500">次 / 天</span>
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">单次用量</label>
+              <input 
+                type="text"
+                value={action.dosage_per_time || ''}
+                placeholder={product?.dosage_unit || '1粒'}
+                onChange={(e) => onUpdate?.({ dosage_per_time: e.target.value })}
+                className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold focus:ring-2 focus:ring-emerald-500/20 outline-none"
+              />
+            </div>
+          </div>
         </div>
-        <div className="flex items-center gap-3 text-xs font-bold text-slate-400 uppercase tracking-widest overflow-hidden">
-          <span className="truncate">{action.dosage} {product?.dosage_unit}</span>
-          <span className="w-1 h-1 bg-slate-300 rounded-full shrink-0"></span>
-          <span className="text-emerald-600 truncate">
-            {action.timing_tag === 'empty_stomach' && '空腹服用'}
-            {action.timing_tag === 'with_meal' && '随餐服用'}
-            {action.timing_tag === 'after_meal' && '餐后服用'}
-          </span>
+      </div>
+
+      <div className="space-y-3 pt-3 border-t border-slate-100">
+        <div className="flex flex-wrap gap-2">
+          {[
+            { id: 'with_meal', label: '随餐', color: 'bg-emerald-100 text-emerald-700' },
+            { id: 'empty_stomach', label: '空腹', color: 'bg-amber-100 text-amber-700' },
+            { id: 'before_bed', label: '睡前', color: 'bg-indigo-100 text-indigo-700' },
+            { id: 'after_meal', label: '餐后', color: 'bg-blue-100 text-blue-700' },
+            { id: 'any_time', label: '不限', color: 'bg-slate-100 text-slate-700' }
+          ].map(tag => (
+            <button
+              key={tag.id}
+              onClick={() => onUpdate?.({ timing_tag: tag.id as any })}
+              className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${
+                action.timing_tag === tag.id 
+                  ? `${tag.color} ring-2 ring-offset-1 ring-current` 
+                  : 'bg-slate-50 text-slate-400 hover:bg-slate-100'
+              }`}
+            >
+              {tag.label}
+            </button>
+          ))}
+        </div>
+        <div className="relative group/note">
+          <MessageSquare className="w-3.5 h-3.5 text-slate-300 absolute left-3 top-2.5" />
+          <input 
+            type="text"
+            value={action.usage_instructions || ''}
+            placeholder="添加使用备注 (如: 温水送服)..."
+            onChange={(e) => onUpdate?.({ usage_instructions: e.target.value })}
+            className="w-full bg-slate-50 border-none rounded-xl py-2 pl-9 pr-4 text-[11px] font-medium text-slate-600 placeholder:text-slate-300 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all"
+          />
         </div>
       </div>
     </div>
@@ -376,14 +435,36 @@ export default function ClientPlanPage() {
       id: `action-${Date.now()}`,
       phase_id: phaseId,
       product_id: products[0]?.id || 'prod-001',
-      dosage: 1,
-      time_slot: 'morning',
-      timing_tag: 'empty_stomach'
+      frequency_per_day: 1,
+      dosage_per_time: products[0]?.dosage_unit || '1粒',
+      timing_tag: 'empty_stomach',
+      usage_instructions: ''
     };
     setProtocol(prev => ({
       ...prev,
       phases: prev.phases.map(p => 
         p.id === phaseId ? { ...p, actions: [...p.actions, newAction] } : p
+      )
+    }));
+  };
+
+  const updatePhase = (phaseId: string, updates: Partial<ProtocolPhase>) => {
+    setProtocol(prev => ({
+      ...prev,
+      phases: prev.phases.map(p => 
+        p.id === phaseId ? { ...p, ...updates } : p
+      )
+    }));
+  };
+
+  const updateAction = (phaseId: string, actionId: string, updates: Partial<ProtocolAction>) => {
+    setProtocol(prev => ({
+      ...prev,
+      phases: prev.phases.map(p => 
+        p.id === phaseId ? {
+          ...p,
+          actions: p.actions.map(a => a.id === actionId ? { ...a, ...updates } : a)
+        } : p
       )
     }));
   };
@@ -992,8 +1073,10 @@ export default function ClientPlanPage() {
                               phase={phase} 
                               index={idx} 
                               onRemove={() => removePhase(phase.id)}
+                              onUpdate={(updates) => updatePhase(phase.id, updates)}
                               onAddAction={() => addAction(phase.id)}
                               onRemoveAction={(actionId) => removeAction(phase.id, actionId)}
+                              onUpdateAction={(actionId, updates) => updateAction(phase.id, actionId, updates)}
                             />
                           ))}
                         </SortableContext>
@@ -2250,8 +2333,14 @@ export default function ClientPlanPage() {
                             sticker += `第 ${idx + 1} 阶段: ${phase.name} (${phase.duration_days} 天)\n`;
                             phase.actions.forEach((action: ProtocolAction) => {
                               const product = products.find(p => p.id === action.product_id);
-                              const slotMap: any = { morning: '早', noon: '午', evening: '晚', night: '睡前', before_bed: '睡前' };
-                              sticker += `- ${product?.name}: ${action.dosage}${product?.dosage_unit} (${slotMap[action.time_slot] || action.time_slot})\n`;
+                              const timingMap: any = { 
+                                with_meal: '随餐', 
+                                empty_stomach: '空腹', 
+                                before_bed: '睡前', 
+                                after_meal: '饭后', 
+                                any_time: '任意时间' 
+                              };
+                              sticker += `- ${product?.name}: ${action.dosage_per_time} (${action.frequency_per_day}次/天, ${timingMap[action.timing_tag] || action.timing_tag})\n`;
                             });
                             sticker += '\n';
                           });
@@ -2451,9 +2540,10 @@ export default function ClientPlanPage() {
                                   id: `action-${Date.now()}`,
                                   phase_id: phase.id,
                                   product_id: products[0]?.id || 'prod-001',
-                                  time_slot: 'morning',
-                                  dosage: 1,
-                                  timing_tag: 'with_meal'
+                                  frequency_per_day: 1,
+                                  dosage_per_time: products[0]?.dosage_unit || '1粒',
+                                  timing_tag: 'with_meal',
+                                  usage_instructions: ''
                                 };
                                 const newPhases = [...protocol.phases];
                                 newPhases[phaseIdx].actions.push(newAction);
