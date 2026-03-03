@@ -22,7 +22,8 @@ import {
   Zap,
   CheckCircle2,
   Moon,
-  Trash2
+  Trash2,
+  Save
 } from 'lucide-react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -51,7 +52,7 @@ function DashboardContent() {
     clients, addClient, updateClient, deleteClient, bulkAddClients,
     products, addProduct, updateProduct, deleteProduct, bulkAddProducts,
     triggers, addTrigger, updateTrigger, deleteTrigger,
-    protocols, addProtocol, updateProtocol, deleteProtocol,
+    protocols, addProtocol, updateProtocol, deleteProtocol, cleanEmptyProtocols,
     ingredients, addIngredient,
     importBatches, rollbackBatch,
     userTasks, addUserTask, updateUserTask, addUserLog
@@ -631,8 +632,8 @@ function DashboardContent() {
       phases: [...currentProtocol.phases, newPhase]
     };
     setCurrentProtocol(updatedProtocol);
-    // Auto save to context if it exists
-    if (protocols.find(p => p.id === updatedProtocol.id)) {
+    // 只有当配方已经存在于库中时才自动保存阶段变更
+    if (protocols.some(p => p.id === updatedProtocol.id)) {
       await updateProtocol(updatedProtocol, { phases: updatedProtocol.phases });
     }
   };
@@ -663,7 +664,8 @@ function DashboardContent() {
       phases: newPhases
     };
     setCurrentProtocol(updatedProtocol);
-    if (protocols.find(p => p.id === updatedProtocol.id)) {
+    // 只有当配方已经存在于库中时才自动保存动作变更
+    if (protocols.some(p => p.id === updatedProtocol.id)) {
       await updateProtocol(updatedProtocol, { phases: updatedProtocol.phases });
     }
   };
@@ -1432,22 +1434,50 @@ function DashboardContent() {
         );
       case 'templates':
         if (!currentProtocol) {
+          const emptyProtocolsCount = protocols.filter(p => 
+            (!p.name || p.name === '新调理配方 SOP' || p.name.trim() === '') && 
+            p.phases.length === 0 && 
+            p.triggers.length === 0
+          ).length;
+
           return (
             <div className="space-y-6">
+              {emptyProtocolsCount > 0 && (
+                <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center text-amber-600">
+                      <Trash2 className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-bold text-amber-900">发现 {emptyProtocolsCount} 个空白配方</div>
+                      <div className="text-xs text-amber-700">这些配方没有名称或内容，可能是误点击创建的。</div>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={async () => {
+                      const count = await cleanEmptyProtocols();
+                      alert(`已清理 ${count} 个空白配方`);
+                    }}
+                    className="px-4 py-2 bg-amber-600 text-white rounded-xl text-xs font-bold hover:bg-amber-700 transition-all shadow-lg shadow-amber-600/20"
+                  >
+                    立即清理
+                  </button>
+                </div>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <button 
-                  onClick={async () => {
+                  onClick={() => {
                     const newProtocol: Protocol = {
                       id: `p-${Date.now()}`,
-                      name: '新调理配方 SOP',
-                      description: '请在这里输入配方的核心逻辑与目标...',
+                      name: '',
+                      description: '',
                       phases: [],
                       triggers: [],
                       practitioner_id: 'p-001',
                       created_at: new Date().toISOString(),
                       updated_at: new Date().toISOString()
                     };
-                    await addProtocol(newProtocol);
+                    // 不立即调用 addProtocol，只在保存时调用
                     setCurrentProtocol(newProtocol);
                   }}
                   className="border-2 border-dashed border-slate-200 rounded-3xl p-6 flex flex-col items-center justify-center gap-3 hover:bg-slate-50 hover:border-emerald-300 transition-all group min-h-[200px]"
@@ -1500,14 +1530,32 @@ function DashboardContent() {
 
         return (
           <div className="space-y-6">
-            <div className="flex items-center gap-4 mb-4">
+            <div className="flex items-center justify-between gap-4 mb-4">
               <button 
                 onClick={() => setCurrentProtocol(null)}
-                className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-colors"
+                className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-colors font-bold text-sm"
               >
                 <ChevronRight className="w-4 h-4 rotate-180" />
                 返回配方列表
               </button>
+
+              <div className="flex items-center gap-3">
+                <button 
+                  onClick={async () => {
+                    if (!currentProtocol.name.trim()) {
+                      alert('请先输入配方名称');
+                      return;
+                    }
+                    await addProtocol(currentProtocol);
+                    alert('配方已保存');
+                    setCurrentProtocol(null);
+                  }}
+                  className="flex items-center gap-2 px-6 py-2 bg-emerald-600 text-white rounded-xl font-bold text-sm hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-600/20"
+                >
+                  <Save className="w-4 h-4" />
+                  保存配方
+                </button>
+              </div>
             </div>
 
             <div className="bg-white border border-slate-200 rounded-3xl p-8 shadow-sm">
@@ -1522,12 +1570,8 @@ function DashboardContent() {
                         const updated = { ...currentProtocol, name: e.target.value };
                         setCurrentProtocol(updated);
                       }}
-                      onBlur={async (e) => {
-                        const updated = { ...currentProtocol, name: e.target.value };
-                        await updateProtocol(updated, { name: e.target.value });
-                      }}
                       className="w-full text-2xl font-black text-slate-900 bg-transparent border-none focus:ring-0 p-0 placeholder-slate-300"
-                      placeholder="输入配方名称"
+                      placeholder="输入配方名称 (如: 12周肝脏修复方案)"
                     />
                   </div>
                   <div>
@@ -1537,10 +1581,6 @@ function DashboardContent() {
                       onChange={(e) => {
                         const updated = { ...currentProtocol, description: e.target.value };
                         setCurrentProtocol(updated);
-                      }}
-                      onBlur={async (e) => {
-                        const updated = { ...currentProtocol, description: e.target.value };
-                        await updateProtocol(updated, { description: e.target.value });
                       }}
                       className="w-full text-slate-500 text-sm bg-transparent border-none focus:ring-0 p-0 resize-none placeholder-slate-300"
                       placeholder="输入配方描述..."
@@ -1571,7 +1611,9 @@ function DashboardContent() {
                               );
                               const updatedProtocol = { ...currentProtocol, phases: updatedPhases };
                               setCurrentProtocol(updatedProtocol);
-                              await updateProtocol(updatedProtocol, { phases: updatedPhases });
+                              if (protocols.some(p => p.id === updatedProtocol.id)) {
+                                await updateProtocol(updatedProtocol, { phases: updatedPhases });
+                              }
                             }}
                             className="w-12 bg-transparent border-b border-slate-200 focus:border-emerald-500 focus:ring-0 p-0 text-center font-bold text-slate-700"
                           /> 天
@@ -1601,7 +1643,9 @@ function DashboardContent() {
                                         newPhases[pIdx].actions[aIdx] = { ...action, dosage: newDosage };
                                         const updatedProtocol = { ...currentProtocol, phases: newPhases };
                                         setCurrentProtocol(updatedProtocol);
-                                        await updateProtocol(updatedProtocol, { phases: newPhases });
+                                        if (protocols.some(p => p.id === updatedProtocol.id)) {
+                                          await updateProtocol(updatedProtocol, { phases: newPhases });
+                                        }
                                       }}
                                       className="w-8 text-center text-[10px] font-bold text-slate-700 bg-transparent border-none p-0 focus:ring-0"
                                     />
@@ -1618,7 +1662,9 @@ function DashboardContent() {
                                       newPhases[pIdx].actions[aIdx] = { ...action, timing_tag: newTiming };
                                       const updatedProtocol = { ...currentProtocol, phases: newPhases };
                                       setCurrentProtocol(updatedProtocol);
-                                      await updateProtocol(updatedProtocol, { phases: newPhases });
+                                      if (protocols.some(p => p.id === updatedProtocol.id)) {
+                                        await updateProtocol(updatedProtocol, { phases: newPhases });
+                                      }
                                     }}
                                     className="text-[10px] font-bold text-slate-500 bg-white border border-slate-100 px-2 py-0.5 rounded-lg shadow-sm focus:ring-0 outline-none"
                                   >
@@ -2191,15 +2237,14 @@ function DashboardContent() {
                   if (activeTab === 'templates') {
                     const newProtocol: Protocol = {
                       id: `p-${Date.now()}`,
-                      name: '新调理配方 SOP',
-                      description: '请在这里输入配方的核心逻辑与目标...',
+                      name: '',
+                      description: '',
                       phases: [],
                       triggers: [],
                       practitioner_id: 'p-001',
                       created_at: new Date().toISOString(),
                       updated_at: new Date().toISOString()
                     };
-                    await addProtocol(newProtocol);
                     setCurrentProtocol(newProtocol);
                   }
                   if (activeTab === 'triggers') setIsTriggerModalOpen(true);

@@ -55,6 +55,7 @@ interface DataContextType {
   addProtocol: (protocol: Protocol) => Promise<void>;
   updateProtocol: (protocol: Protocol, partial?: Partial<Protocol>) => Promise<void>;
   deleteProtocol: (id: string) => Promise<void>;
+  cleanEmptyProtocols: () => Promise<number>;
   addUserTask: (task: UserTask) => Promise<void>;
   updateUserTask: (task: UserTask, partial?: Partial<UserTask>) => Promise<void>;
   deleteUserTask: (id: string) => Promise<void>;
@@ -254,13 +255,41 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   };
 
   const updateProtocol = async (updatedProtocol: Protocol, partialUpdate?: Partial<Protocol>) => {
-    setProtocols(prev => prev.map(p => p.id === updatedProtocol.id ? updatedProtocol : p));
-    await cloud.updateItem('protocols', updatedProtocol.id, partialUpdate || updatedProtocol);
+    setProtocols(prev => {
+      const exists = prev.some(p => p.id === updatedProtocol.id);
+      if (exists) {
+        return prev.map(p => p.id === updatedProtocol.id ? updatedProtocol : p);
+      }
+      return [updatedProtocol, ...prev];
+    });
+
+    const existsInCloud = protocols.some(p => p.id === updatedProtocol.id);
+    if (existsInCloud) {
+      await cloud.updateItem('protocols', updatedProtocol.id, partialUpdate || updatedProtocol);
+    } else {
+      await cloud.addItem('protocols', updatedProtocol);
+    }
   };
 
   const deleteProtocol = async (id: string) => {
     setProtocols(prev => prev.filter(p => p.id !== id));
     await cloud.deleteItem('protocols', id);
+  };
+
+  const cleanEmptyProtocols = async () => {
+    const emptyProtocols = protocols.filter(p => 
+      (!p.name || p.name === '新调理配方 SOP' || p.name.trim() === '') && 
+      p.phases.length === 0 && 
+      p.triggers.length === 0
+    );
+
+    if (emptyProtocols.length === 0) return 0;
+
+    const idsToDelete = emptyProtocols.map(p => p.id);
+    setProtocols(prev => prev.filter(p => !idsToDelete.includes(p.id)));
+    
+    await Promise.all(idsToDelete.map(id => cloud.deleteItem('protocols', id)));
+    return idsToDelete.length;
   };
 
   const addUserTask = async (task: UserTask) => {
@@ -374,6 +403,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       addProtocol,
       updateProtocol,
       deleteProtocol,
+      cleanEmptyProtocols,
       addUserTask,
       updateUserTask,
       deleteUserTask,
