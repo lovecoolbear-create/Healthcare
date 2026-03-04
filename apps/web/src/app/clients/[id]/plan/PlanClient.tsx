@@ -2598,6 +2598,7 @@ export default function ClientPlanPage() {
                           const prod = availableProducts[0];
                           const newItem = {
                             product_id: prod.id,
+                            current_stock: 30, // 默认初始库存
                             remaining_days: 30,
                             last_calibration_date: new Date().toISOString().split('T')[0]
                           };
@@ -2667,7 +2668,7 @@ export default function ClientPlanPage() {
                                         const newRemainingDays = Math.max(0, item.remaining_days - 1);
                                         const updatedInventory = selectedClient.inventory_status?.map(inv => 
                                           inv.product_id === item.product_id 
-                                            ? { ...inv, remaining_days: newRemainingDays, last_calibration_date: new Date().toISOString().split('T')[0] }
+                                            ? { ...inv, current_stock: Math.max(0, inv.current_stock - 1), remaining_days: newRemainingDays, last_calibration_date: new Date().toISOString().split('T')[0] }
                                             : inv
                                         );
                                         await updateClient({ ...selectedClient, inventory_status: updatedInventory }, { inventory_status: updatedInventory });
@@ -2683,7 +2684,7 @@ export default function ClientPlanPage() {
                                         const val = parseInt(e.target.value) || 0;
                                         const updatedInventory = selectedClient.inventory_status?.map(inv => 
                                           inv.product_id === item.product_id 
-                                            ? { ...inv, remaining_days: val, last_calibration_date: new Date().toISOString().split('T')[0] }
+                                            ? { ...inv, current_stock: inv.current_stock, remaining_days: val, last_calibration_date: new Date().toISOString().split('T')[0] }
                                             : inv
                                         );
                                         await updateClient({ ...selectedClient, inventory_status: updatedInventory }, { inventory_status: updatedInventory });
@@ -2695,7 +2696,7 @@ export default function ClientPlanPage() {
                                         const newRemainingDays = item.remaining_days + 1;
                                         const updatedInventory = selectedClient.inventory_status?.map(inv => 
                                           inv.product_id === item.product_id 
-                                            ? { ...inv, remaining_days: newRemainingDays, last_calibration_date: new Date().toISOString().split('T')[0] }
+                                            ? { ...inv, current_stock: Math.max(0, inv.current_stock + 1), remaining_days: newRemainingDays, last_calibration_date: new Date().toISOString().split('T')[0] }
                                             : inv
                                         );
                                         await updateClient({ ...selectedClient, inventory_status: updatedInventory }, { inventory_status: updatedInventory });

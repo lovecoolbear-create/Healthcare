@@ -8,20 +8,10 @@ import {
   mockProtocol,
   mockIngredients
 } from '../../../mp/src/mocks/data';
-import { Client, Product, Protocol, ProtocolTrigger, Ingredient, FollowUpNote, ConflictRule } from '@healthcare/shared';
+import { Client, Product, Protocol, ProtocolTrigger, Ingredient, FollowUpNote, ConflictRule, UserTask } from '@healthcare/shared';
 import { cloud } from '../services/cloud';
 
-export interface UserTask {
-  id: string;
-  clientId: string;
-  type: 'manual_todo';
-  content: string;
-  dueDate: string;
-  priority: 'low' | 'medium' | 'high' | 'critical';
-  status: 'pending' | 'completed';
-  createdAt: string;
-  script?: string;
-}
+// --- 类型定义 ---
 
 export interface ImportBatch {
   id: string;

@@ -95,9 +95,9 @@ export const mockClient: Client = {
   checkin_streak: 5,
   missed_days: 0,
   inventory_status: [
-    { product_id: 'p-1', remaining_days: 15, last_calibration_date: '2024-03-01' },
-    { product_id: 'p-2', remaining_days: 2, last_calibration_date: '2024-03-01' },
-    { product_id: 'p-3', remaining_days: 25, last_calibration_date: '2024-03-01' }
+    { product_id: 'p-1', current_stock: 45, remaining_days: 15, last_calibration_date: '2024-03-01' },
+    { product_id: 'p-2', current_stock: 4, remaining_days: 2, last_calibration_date: '2024-03-01' },
+    { product_id: 'p-3', current_stock: 75, remaining_days: 25, last_calibration_date: '2024-03-01' }
   ],
   feeling_metrics: {
     energy_score: 8,
@@ -180,7 +180,7 @@ export const mockClients: Client[] = [
     health_baseline: '多囊卵巢综合征 (PCOS)',
     allergies: ['乳糖'],
     inventory_status: [
-      { product_id: 'p-1', remaining_days: 1, last_calibration_date: '2024-03-01' }
+      { product_id: 'p-1', current_stock: 3, remaining_days: 1, last_calibration_date: '2024-03-01' }
     ],
     feeling_metrics: {
       energy_score: 4,
@@ -208,7 +208,7 @@ export const mockClients: Client[] = [
     loyalty_points: 50,
     health_baseline: '严重睡眠不足，压力性肥胖',
     inventory_status: [
-      { product_id: 'p-2', remaining_days: 20, last_calibration_date: '2024-03-01' }
+      { product_id: 'p-2', current_stock: 40, remaining_days: 20, last_calibration_date: '2024-03-01' }
     ],
     feeling_metrics: {
       energy_score: 2,

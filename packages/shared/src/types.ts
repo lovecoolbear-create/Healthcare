@@ -99,11 +99,23 @@ export interface FollowUpNote {
   id: string;
   client_id: string;
   practitioner_id: string;
-  date: string;
   content: string;
-  type: 'milestone' | 'regular' | 'adjustment'; // 关键节点、常规随访、方案调整
+  date: string;
+  type: 'regular' | 'adjustment' | 'milestone';
   tags?: string[];
   created_at: string;
+}
+
+export interface UserTask {
+  id: string;
+  clientId: string;
+  type: 'manual_todo';
+  content: string;
+  dueDate: string;
+  priority: 'low' | 'medium' | 'high' | 'critical';
+  status: 'pending' | 'completed';
+  createdAt: string;
+  script?: string;
 }
 
 export interface EvidenceRecord {
