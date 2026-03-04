@@ -171,6 +171,7 @@ export interface Product {
   enterprise_name?: string; // 企业名称
   spec_quantity: number; // 规格数量
   spec_unit: string; // 规格单位，如：粒、片、ml
+  packaging_unit?: string; // 包装单位，如：瓶、盒、袋
   dosage_unit: string; // 单次剂量单位，如：粒、ml
   category?: string; // 产品分类
   dosage_per_day?: number; // 每日建议剂量

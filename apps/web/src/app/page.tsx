@@ -391,17 +391,19 @@ function DashboardContent() {
     const efficacyStr = formData.get('main_efficacy') as string;
     const efficacyList = efficacyStr ? efficacyStr.split(/[,，]/).map(s => s.trim()).filter(Boolean) : [];
     
-  const newProduct: Product = {
-    id: editingProduct?.id || `prod-${Date.now()}`,
-    name: formData.get('name') as string,
-    brand: formData.get('brand') as string,
-    enterprise_name: formData.get('enterprise_name') as string,
-    dosage_unit: formData.get('dosage_unit') as string,
-    spec_quantity: Number(formData.get('spec_quantity')) || 60,
-    spec_unit: formData.get('spec_unit') as string || '粒',
-    main_efficacy: efficacyList,
-    ingredients: selectedIngredients,
-  };
+    const newProduct: Product = {
+      id: editingProduct?.id || `prod-${Date.now()}`,
+      name: formData.get('name') as string,
+      brand: formData.get('brand') as string,
+      enterprise_name: formData.get('enterprise_name') as string,
+      dosage_unit: formData.get('dosage_unit') as string,
+      spec_quantity: Number(formData.get('spec_quantity')) || 60,
+      spec_unit: formData.get('spec_unit') as string || '粒',
+      packaging_unit: formData.get('packaging_unit') as string || '瓶',
+      price: Number(formData.get('price')) || 0,
+      main_efficacy: efficacyList,
+      ingredients: selectedIngredients,
+    };
 
     if (editingProduct?.id) {
       const partialUpdate: Partial<Product> = {
@@ -411,6 +413,8 @@ function DashboardContent() {
         dosage_unit: newProduct.dosage_unit,
         spec_quantity: newProduct.spec_quantity,
         spec_unit: newProduct.spec_unit,
+        packaging_unit: newProduct.packaging_unit,
+        price: newProduct.price,
         main_efficacy: newProduct.main_efficacy,
         ingredients: newProduct.ingredients
       };
@@ -3132,6 +3136,16 @@ function DashboardContent() {
               </div>
               <div className="grid grid-cols-2 gap-3 md:gap-4">
                 <div className="space-y-1.5 md:space-y-2">
+                  <label className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">包装单位</label>
+                  <input name="packaging_unit" type="text" placeholder="如: 瓶/盒" defaultValue={editingProduct?.packaging_unit || '瓶'} className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl py-3 px-4 md:py-4 md:px-6 text-xs md:text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none" />
+                </div>
+                <div className="space-y-1.5 md:space-y-2">
+                  <label className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">产品单价 (元)</label>
+                  <input name="price" type="number" step="0.01" placeholder="如: 298" defaultValue={editingProduct?.price} className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl py-3 px-4 md:py-4 md:px-6 text-xs md:text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3 md:gap-4">
+                <div className="space-y-1.5 md:space-y-2">
                   <label className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">单次剂量单位</label>
                   <input name="dosage_unit" type="text" placeholder="如: 粒/袋/ml" defaultValue={editingProduct?.dosage_unit} className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl py-3 px-4 md:py-4 md:px-6 text-xs md:text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none" />
                 </div>
@@ -3142,8 +3156,8 @@ function DashboardContent() {
               </div>
               <div className="grid grid-cols-2 gap-3 md:gap-4">
                 <div className="space-y-1.5 md:space-y-2">
-                  <label className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">规格单位</label>
-                  <input name="spec_unit" type="text" placeholder="如: 瓶/盒" defaultValue={editingProduct?.spec_unit} className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl py-3 px-4 md:py-4 md:px-6 text-xs md:text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none" />
+                  <label className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">规格单位 (内容物)</label>
+                  <input name="spec_unit" type="text" placeholder="如: 粒/片" defaultValue={editingProduct?.spec_unit || '粒'} className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl py-3 px-4 md:py-4 md:px-6 text-xs md:text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none" />
                 </div>
               </div>
                 <div className="space-y-3 md:space-y-4">

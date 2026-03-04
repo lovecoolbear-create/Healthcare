@@ -1215,8 +1215,8 @@ export default function PlanClient() {
                                       <>
                                         <div className="w-px h-6 bg-slate-200"></div>
                                         <div className="flex flex-col">
-                                          <span className="text-[10px] font-bold text-slate-400 uppercase">补货金额 (逻辑闭环)</span>
-                                          <span className="text-sm font-black text-slate-900">¥ {product.price} <span className="text-[10px] text-slate-400">/ {product.spec_unit}</span></span>
+                                          <span className="text-[10px] font-bold text-slate-400 uppercase">补货金额</span>
+                                          <span className="text-sm font-black text-slate-900">¥ {product.price} <span className="text-[10px] text-slate-400">/ {product.packaging_unit || '瓶'}</span></span>
                                         </div>
                                       </>
                                     )}
@@ -1649,7 +1649,7 @@ export default function PlanClient() {
                                     <div className="text-[10px] text-slate-400">{product?.brand}</div>
                                   </td>
                                   <td className="px-8 py-6">
-                                    <div className="text-sm font-black text-slate-900">{order.quantity} <span className="text-[10px] text-slate-400">{product?.spec_unit}</span></div>
+                                    <div className="text-sm font-black text-slate-900">{order.quantity} <span className="text-[10px] text-slate-400">{product?.packaging_unit || '瓶'}</span></div>
                                   </td>
                                   <td className="px-8 py-6">
                                     <span className={`px-2 py-1 text-[10px] font-black rounded-lg border uppercase ${
