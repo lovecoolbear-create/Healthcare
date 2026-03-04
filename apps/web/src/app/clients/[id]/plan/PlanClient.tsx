@@ -438,7 +438,8 @@ export default function ClientPlanPage() {
       frequency_per_day: 1,
       dosage_per_time: products[0]?.dosage_unit || '1粒',
       timing_tag: 'empty_stomach',
-      usage_instructions: ''
+      usage_instructions: '',
+      order: 0
     };
     setProtocol(prev => ({
       ...prev,
@@ -2543,7 +2544,8 @@ export default function ClientPlanPage() {
                                   frequency_per_day: 1,
                                   dosage_per_time: products[0]?.dosage_unit || '1粒',
                                   timing_tag: 'with_meal',
-                                  usage_instructions: ''
+                                  usage_instructions: '',
+                                  order: 0
                                 };
                                 const newPhases = [...protocol.phases];
                                 newPhases[phaseIdx].actions.push(newAction);

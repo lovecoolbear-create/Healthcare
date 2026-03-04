@@ -48,6 +48,7 @@ export interface Client {
   health_goal?: string; // 调理目标 (Nutritionist focus)
   source?: string;      // 获客来源 (Sales focus)
   health_baseline?: string;
+  protocol_id?: string; // 关联的干预方案 ID
   
   // 360° Golden Record - Base Dimensions
   allergies?: string[];
@@ -60,6 +61,7 @@ export interface Client {
   
   inventory_status?: {
     product_id: string;
+    current_stock: number; // 当前库存数量
     remaining_days: number; // 库存预估水位 (Inventory Water Level)
     last_calibration_date: string; // 最后一次校准日期
   }[];
@@ -100,6 +102,7 @@ export interface FollowUpNote {
   date: string;
   content: string;
   type: 'milestone' | 'regular' | 'adjustment'; // 关键节点、常规随访、方案调整
+  tags?: string[];
   created_at: string;
 }
 
@@ -112,6 +115,13 @@ export interface EvidenceRecord {
   images?: string[]; // 支持多图展示证据
   before_img_url?: string; // 服用前基准图
   after_img_url?: string; // 好转对比图
+  metrics?: {
+    name: string;
+    before_value: string;
+    after_value: string;
+    unit: string;
+    trend: 'up' | 'down';
+  }[];
 }
 
 // 1. 产品与成分库 (Product & Ingredient Master)
@@ -123,6 +133,16 @@ export interface Ingredient {
   category?: string; // 成分分类
   unit?: string;     // 标准单位 (如 mg, g, IU)
   price_per_unit?: number; // 基准价格 (可选)
+  target_metrics?: MetricType[]; // 针对的生理指标 (用于功效闭环关联)
+}
+
+export interface ConflictRule {
+  id: string;
+  medication_keyword: string; // 药物关键词 (如: "华法林")
+  ingredient_keyword: string; // 营养素关键词 (如: "辅酶 Q10")
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  description: string; // 风险描述
+  suggestion: string; // 专业建议
 }
 
 export interface ProductIngredient {
@@ -144,7 +164,8 @@ export interface Product {
   dosage_per_day?: number; // 每日建议剂量
   unit?: string; // 剂量单位 (同 dosage_unit，为兼容性保留)
   
-  // 关键字段
+  // 关键字段 (逻辑闭环增强)
+  price?: number; // 产品零售价 (用于计算补货额)
   main_efficacy?: string[]; // 主要功效，如：['护肝', '降脂']
   suggested_frequency?: number; // 建议频率
   shelf_life_after_opening_days?: number; // 开封后有效期
@@ -152,11 +173,11 @@ export interface Product {
   buy_link?: string;
   precautions?: string; // 禁忌项
   
-  // 成分关联
+  // 成分关联 (逻辑闭环增强)
   ingredients?: {
     ingredient_id: string;
-    amount_per_unit: number;
-    unit: string;
+    amount_per_unit: number; // 每一份(粒/片)的含量
+    unit: string; // 含量单位 (mg, IU, mcg)
   }[]; // 核心成分
 }
 
@@ -321,14 +342,5 @@ export interface ProfessionalFeed {
   title: string;
   content_url: string;
   summary?: string;
-  created_at: string;
-}
-
-export interface FollowUpNote {
-  id: string;
-  client_id: string;
-  practitioner_id: string;
-  content: string;
-  tags?: string[];
   created_at: string;
 }

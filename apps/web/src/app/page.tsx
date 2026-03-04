@@ -10,6 +10,8 @@ import {
   Plus, 
   Search,
   ChevronRight,
+  ChevronUp,
+  ChevronDown,
   Package,
   Layers,
   Activity,
@@ -33,20 +35,9 @@ import { Client, Product, ProtocolPhase, ProtocolAction, ProtocolTrigger, Protoc
 import { mockIngredients } from '../../../mp/src/mocks/data';
 import { ImportBatch } from '../context/DataContext';
 
-interface Alert extends Client {
-  alertType: string;
-  priority: 'low' | 'medium' | 'high' | 'critical';
-  actionLabel?: string;
-  actionScript?: string;
-  triggerId?: string;
-  actionType?: string;
-  alertMsg?: string;
-  dueDate?: string;
-  isUserTask?: boolean;
-}
-
 import { Sidebar } from '../components/Sidebar';
 import { ActiveTab } from '../types';
+import { useTriggers, Alert as TriggerAlert, ALERT_GROUPS } from '../hooks/useTriggers';
 
 function DashboardContent() {
   const { 
@@ -97,189 +88,32 @@ function DashboardContent() {
   const [searchQuery, setSearchQuery] = React.useState('');
   const [isSilentRuleEnabled, setIsSilentRuleEnabled] = React.useState(true);
   
+  // 使用中心化逻辑 hook
+  const { allAlerts, simulateTriggers } = useTriggers(isSilentRuleEnabled);
+  
   // 产品选择 Modal 状态
   const [isProductSelectModalOpen, setIsProductSelectModalOpen] = React.useState(false);
   const [activePhaseIdForProductSelect, setActivePhaseIdForProductSelect] = React.useState<string | null>(null);
   const [productSearchQuery, setProductSearchQuery] = React.useState('');
   
+  // --- 逻辑模拟器状态 (Logic Simulator States) ---
+  const [isSimulatorOpen, setIsSimulatorOpen] = React.useState(false);
+  const [mockClient, setMockClient] = React.useState<Partial<Client>>({
+    name: '测试客户',
+    missed_days: 0,
+    inventory_status: [],
+    feeling_metrics: { energy_score: 80, sleep_score: 80, mood_score: 80, trend_pivot: false },
+    created_at: new Date().toISOString()
+  });
+  const [simulationResults, setSimulationResults] = React.useState<any[]>([]);
+
+  const handleSimulate = () => {
+    const results = simulateTriggers(mockClient);
+    setSimulationResults(results);
+  };
+  
   // --- 实战工作助手逻辑 (Work Assistant Logic) ---
   // 核心逻辑：基于“成交意向”与“服务风险”智能生成待办
-  
-  const SILENT_PERIOD_MS = 48 * 60 * 60 * 1000; // 48 小时静默期
-
-  // 告警分类与权重
-  const ALERT_GROUPS = {
-    'urgent': { label: '紧急干预', icon: Zap, color: 'text-rose-500', bg: 'bg-rose-50' },
-    'inventory': { label: '补货转化', icon: Package, color: 'text-orange-500', bg: 'bg-orange-50' },
-    'followup': { label: '常规随访', icon: Calendar, color: 'text-blue-500', bg: 'bg-blue-50' },
-    'growth': { label: '关系维护', icon: TrendingUp, color: 'text-emerald-500', bg: 'bg-emerald-50' }
-  };
-
-  const generateAlerts = () => {
-    const alerts: Alert[] = [];
-    const priorityMap = { 'critical': 0, 'high': 1, 'medium': 2, 'low': 3 };
-
-    clients.forEach(client => {
-      const clientPotentialAlerts: Alert[] = [];
-      
-      triggers.filter(t => t.is_enabled).forEach(trigger => {
-        let isTriggered = false;
-        let alertMsg = '';
-        const { condition, action } = trigger;
-
-        // 1. 依从性判定 (Compliance) - 行为维度
-        if (condition.type === 'adherence_streak') {
-          if (client.missed_days && client.missed_days >= condition.threshold) {
-            isTriggered = true;
-            alertMsg = `连续 ${client.missed_days} 天未打卡`;
-          }
-        }
-
-        // 2. 库存判定 (Inventory) - 库存维度
-        else if (condition.type === 'stock_level') {
-          const lowStockProduct = client.inventory_status?.find(i => i.remaining_days <= condition.threshold);
-          if (lowStockProduct) {
-            isTriggered = true;
-            const product = products.find(p => p.id === lowStockProduct.product_id);
-            alertMsg = `${lowStockProduct.remaining_days} 天后断货 (${product?.name || lowStockProduct.product_id})`;
-          }
-        }
-
-        // 3. 体感/风险判定 (Symptom/Risk) - 体感维度
-        else if (condition.type === 'vital_trend') {
-          // 使用现有指标判定趋势下滑 (简化逻辑：如果能量评分低或有趋势拐点)
-          if (client.feeling_metrics?.trend_pivot || (client.feeling_metrics?.energy_score && client.feeling_metrics.energy_score < 60)) {
-            isTriggered = true;
-            alertMsg = '体感指标持续下滑/出现波动';
-          }
-        }
-
-        // 4. 增长/SOP 节点 (Growth/SOP) - 时间维度
-        else if (condition.type === 'protocol_duration') {
-          if (client.created_at) {
-            const daysSinceStart = Math.floor((new Date().getTime() - new Date(client.created_at).getTime()) / (1000 * 60 * 60 * 24));
-            if (daysSinceStart === condition.threshold) {
-              isTriggered = true;
-              alertMsg = `方案执行第 ${daysSinceStart} 天回访`;
-            }
-          }
-        }
-
-        if (isTriggered) {
-          // 映射到标准分类
-          let category: keyof typeof ALERT_GROUPS = 'followup';
-          if (trigger.category === 'inventory') category = 'inventory';
-          if (trigger.category === 'symptom' || action.priority === 'critical') category = 'urgent';
-          if (trigger.category === 'growth') category = 'growth';
-
-          // 替换通用变量
-          let finalActionMsg = action.payload_template
-            .replace(/\{\{client_name\}\}/g, client.name)
-            .replace(/\{\{threshold\}\}/g, condition.threshold.toString());
-
-          // 如果是库存预警，尝试替换产品名
-          if (condition.type === 'stock_level') {
-            const lowStockProduct = client.inventory_status?.find(i => i.remaining_days <= condition.threshold);
-            const product = products.find(p => p.id === lowStockProduct?.product_id);
-            finalActionMsg = finalActionMsg.replace(/\{\{product_name\}\}/g, product?.name || '补剂');
-          }
-
-          clientPotentialAlerts.push({
-            ...client,
-            alertType: category,
-            alertMsg: alertMsg,
-            priority: action.priority,
-            actionLabel: action.label,
-            actionScript: finalActionMsg,
-            triggerId: trigger.id,
-            actionType: action.type
-          });
-        }
-      });
-
-      // --- 全局静默规则与合并同类项 (PDR 1.4) ---
-      if (clientPotentialAlerts.length > 0) {
-        // 1. 合并同类项：按优先级排序，只取最高优先级的一个
-        clientPotentialAlerts.sort((a, b) => priorityMap[a.priority as keyof typeof priorityMap] - priorityMap[b.priority as keyof typeof priorityMap]);
-        const topAlert = clientPotentialAlerts[0];
-
-        // 2. 全局静默逻辑：48小时内非紧急告警合并
-        let shouldShow = true;
-        if (isSilentRuleEnabled && topAlert.priority !== 'critical' && client.last_alert_at) {
-          const lastAlertTime = new Date(client.last_alert_at).getTime();
-          const now = new Date().getTime();
-          if (now - lastAlertTime < SILENT_PERIOD_MS) {
-            // 如果上一次也是非紧急告警，则静默
-            if (client.last_alert_priority !== 'critical') {
-              shouldShow = false;
-              // 调试日志 (可选)
-              console.log(`[Silent Rule] Muting alert for ${client.name} due to recent non-critical alert at ${client.last_alert_at}`);
-            }
-          }
-        }
-
-        if (shouldShow) {
-          alerts.push(topAlert);
-        }
-      }
-    });
-
-    // 2. 手动创建的待办任务
-    userTasks.filter(t => t.status === 'pending').forEach(task => {
-      const client = clients.find(c => c.id === task.clientId);
-      if (!client) return;
-
-      // 只要是未完成的手动待办，都显示在列表中（通过 actionLabel 区分）
-      alerts.push({
-        ...client,
-        id: task.id, // 重要：使用任务 ID 避免与客户 ID 冲突
-        alertType: task.priority === 'critical' ? 'urgent' : 'followup',
-        alertMsg: task.content,
-        priority: task.priority,
-        actionLabel: '【手动待办】',
-        actionScript: task.script || task.content,
-        dueDate: task.dueDate,
-        isUserTask: true
-      });
-    });
-
-    // 默认兜底逻辑：如果没有任何触发器，且没有静默，保留一些基础判定
-    if (alerts.length === 0 && !isSilentRuleEnabled) {
-      // 只有在静默规则关闭或者没有告警时才添加 SOP 兜底
-      clients.forEach(c => {
-        if (!c.created_at) return;
-        const daysSinceStart = Math.floor((new Date().getTime() - new Date(c.created_at).getTime()) / (1000 * 60 * 60 * 24));
-        const milestones = [3, 7, 14, 28];
-        if (milestones.includes(daysSinceStart)) {
-          // 检查该客户是否在 48h 内已经有过告警 (即使当前 generateAlerts 没搜到新触发器)
-          let shouldShowSop = true;
-          if (isSilentRuleEnabled && c.last_alert_at) {
-             const lastAlertTime = new Date(c.last_alert_at).getTime();
-             if (new Date().getTime() - lastAlertTime < SILENT_PERIOD_MS && c.last_alert_priority !== 'critical') {
-                shouldShowSop = false;
-             }
-          }
-
-          if (shouldShowSop && !alerts.find(a => a.id === c.id)) {
-            alerts.push({
-              ...c,
-              alertType: 'sop',
-              alertMsg: `入伙第 ${daysSinceStart} 天关键随访`,
-              priority: 'high',
-              actionLabel: '【标准随访】',
-              actionScript: `你好 ${c.name}，今天是方案执行第 ${daysSinceStart} 天，身体感觉怎么样？`
-            });
-          }
-        }
-      });
-    }
-
-    return alerts.sort((a, b) => {
-      return priorityMap[a.priority as keyof typeof priorityMap] - priorityMap[b.priority as keyof typeof priorityMap];
-    });
-  };
-
-  const allAlerts = generateAlerts();
   
   // 辅助变量用于统计和兼容旧代码
   const stockAlertClients = allAlerts.filter(a => a.alertType === 'inventory');
@@ -420,7 +254,7 @@ function DashboardContent() {
     const clientBaseFields = ['姓名', '手机号', '性别(male/female)', '生日(YYYY-MM-DD)', '身高(cm)', '体重(kg)'];
     const productBaseFields = ['产品名称', '品牌', '企业名称', '单次剂量单位', '规格数量', '规格单位', '主要功效(逗号分隔)', '核心成分(ID:含量:单位,逗号分隔)'];
 
-    // 动态扩展字段 (基于 PDR v1.7 业务模型)
+    // 动态扩展字段 (基于 PDR 2.0 中心化引擎)
     // 客户档案扩展：调理目标、获客来源
     const clientExtendedFields = ['调理目标', '获客来源'];
     // 产品库扩展：产品分类、每日建议剂量、禁忌项
@@ -437,7 +271,7 @@ function DashboardContent() {
     
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `${importType === 'clients' ? '客户档案' : '产品库'}_标准导入模板_v1.7.csv`);
+    link.setAttribute("download", `${importType === 'clients' ? '客户档案' : '产品库'}_标准导入模板_v2.0.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -675,7 +509,8 @@ function DashboardContent() {
       frequency_per_day: 1,
       dosage_per_time: product.dosage_unit || '1粒',
       timing_tag: 'with_meal',
-      usage_instructions: ''
+      usage_instructions: '',
+      order: 0
     };
 
     const newPhases = [...currentProtocol.phases];
@@ -1029,7 +864,7 @@ function DashboardContent() {
                 <div className="p-10">
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                     {allAlerts.length > 0 ? (
-                      allAlerts.map((alertItem: Alert, idx: number) => {
+                      allAlerts.map((alertItem: TriggerAlert, idx: number) => {
                         const group = ALERT_GROUPS[alertItem.alertType as keyof typeof ALERT_GROUPS] || ALERT_GROUPS.followup;
                         const Icon = group.icon;
                         
@@ -1804,7 +1639,7 @@ function DashboardContent() {
       case 'triggers':
         return (
           <div className="space-y-6 md:space-y-8">
-            {/* 全局静默规则提示 (PDR 1.4) */}
+            {/* 全局静默规则提示 (PDR 2.0 中心化引擎) */}
             <div className="bg-slate-900 text-white rounded-3xl p-5 md:p-6 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between overflow-hidden relative group gap-6">
               <div className="absolute right-0 top-0 opacity-10 translate-x-1/4 -translate-y-1/4 group-hover:scale-110 transition-transform duration-700">
                 <Target className="w-48 h-48" />
@@ -1815,15 +1650,14 @@ function DashboardContent() {
                 </div>
                 <div>
                   <div className="flex items-center gap-2 mb-1">
-                    <h3 className="text-base md:text-lg font-black tracking-tight">全局静默规则</h3>
+                    <h3 className="text-base md:text-lg font-black tracking-tight">PDR 2.0 策略引擎</h3>
                     <span className={`text-[8px] md:text-[10px] font-black ${isSilentRuleEnabled ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 'bg-slate-700 text-slate-400 border-slate-600'} px-2 py-0.5 rounded-full border uppercase transition-colors`}>
-                      {isSilentRuleEnabled ? 'Active' : 'Disabled'}
+                      {isSilentRuleEnabled ? 'Running' : 'Paused'}
                     </span>
                   </div>
                   <p className="text-slate-400 text-[10px] md:text-xs font-medium max-w-md">
-                    同一客户在 <span className="text-white font-bold">48 小时内</span> 最多触发 <span className="text-white font-bold">1 个非紧急</span> 红点告警。
-                    系统将自动合并同类项，确保您的工作台始终保持丝滑顺畅。
-                    <span className="block mt-1 text-rose-400">注意：紧急 (Critical) 告警不受此限。</span>
+                    当前运行中心化逻辑引擎。同一客户在 <span className="text-white font-bold">48 小时内</span> 最多触发 <span className="text-white font-bold">1 个非紧急</span> 告警。
+                    系统已自动合并同类项，确保您的工作台保持高效。
                   </p>
                 </div>
               </div>
@@ -1839,6 +1673,173 @@ function DashboardContent() {
                   <div className={`absolute top-1 w-5 h-5 md:w-6 md:h-6 bg-white rounded-full transition-all duration-300 ${isSilentRuleEnabled ? 'left-6 md:left-7' : 'left-1'}`} />
                 </button>
               </div>
+            </div>
+
+            {/* 触发器逻辑模拟器 (Trigger Logic Simulator) */}
+            <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm overflow-hidden relative group">
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shadow-inner">
+                    <FlaskConical className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-black text-slate-900 tracking-tight">逻辑模拟实验室</h3>
+                    <p className="text-xs text-slate-500 font-medium mt-1">模拟不同客户场景，即时验证自动化干预规则的触发效果</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setIsSimulatorOpen(!isSimulatorOpen)}
+                  className={`px-6 py-3 rounded-2xl text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
+                    isSimulatorOpen 
+                      ? 'bg-slate-100 text-slate-500 hover:bg-slate-200' 
+                      : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-xl shadow-indigo-200'
+                  }`}
+                >
+                  {isSimulatorOpen ? '关闭模拟器' : '开启模拟测试'}
+                  {isSimulatorOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </button>
+              </div>
+
+              {isSimulatorOpen && (
+                <div className="mt-8 pt-8 border-t border-slate-100 animate-in fade-in slide-in-from-top-4 duration-300">
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    {/* Mock Client Config */}
+                    <div className="lg:col-span-1 space-y-6">
+                      <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 mb-2">
+                        <Users className="w-3.5 h-3.5" />
+                        配置测试客户画像
+                      </div>
+                      
+                      <div className="space-y-4 bg-slate-50 p-6 rounded-[24px] border border-slate-100">
+                        <div>
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1.5 block">连续断服天数 (Adherence)</label>
+                          <input 
+                            type="number" 
+                            value={mockClient.missed_days}
+                            onChange={(e) => setMockClient({ ...mockClient, missed_days: parseInt(e.target.value) || 0 })}
+                            className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                            placeholder="例如: 3"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1.5 block">当前体感评分 (Energy Score)</label>
+                          <div className="flex items-center gap-4">
+                            <input 
+                              type="range" 
+                              min="0" 
+                              max="100"
+                              value={mockClient.feeling_metrics?.energy_score || 80}
+                              onChange={(e) => setMockClient({ 
+                                ...mockClient, 
+                                feeling_metrics: { 
+                                  ...mockClient.feeling_metrics!, 
+                                  energy_score: parseInt(e.target.value) 
+                                } 
+                              })}
+                              className="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                            />
+                            <span className="text-sm font-black text-slate-700 w-8">{mockClient.feeling_metrics?.energy_score || 80}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100">
+                          <span className="text-xs font-bold text-slate-600">体感出现剧烈波动?</span>
+                          <button 
+                            onClick={() => setMockClient({ 
+                              ...mockClient, 
+                              feeling_metrics: { 
+                                ...mockClient.feeling_metrics!, 
+                                trend_pivot: !mockClient.feeling_metrics?.trend_pivot 
+                              } 
+                            })}
+                            className={`w-10 h-5 rounded-full relative transition-colors ${mockClient.feeling_metrics?.trend_pivot ? 'bg-indigo-500' : 'bg-slate-200'}`}
+                          >
+                            <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${mockClient.feeling_metrics?.trend_pivot ? 'left-5.5' : 'left-0.5'}`} />
+                          </button>
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1.5 block">方案执行天数</label>
+                          <input 
+                            type="number" 
+                            defaultValue="0"
+                            onChange={(e) => {
+                              const days = parseInt(e.target.value) || 0;
+                              const date = new Date();
+                              date.setDate(date.getDate() - days);
+                              setMockClient({ ...mockClient, created_at: date.toISOString() });
+                            }}
+                            className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                            placeholder="例如: 7"
+                          />
+                        </div>
+
+                        <button 
+                          onClick={handleSimulate}
+                          className="w-full py-4 bg-slate-900 text-white rounded-2xl text-xs font-black hover:bg-indigo-600 transition-all shadow-xl shadow-slate-900/10 uppercase tracking-widest flex items-center justify-center gap-2"
+                        >
+                          <Zap className="w-4 h-4" />
+                          运行逻辑仿真
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Simulation Results */}
+                    <div className="lg:col-span-2 space-y-6">
+                      <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 mb-2">
+                        <Activity className="w-3.5 h-3.5" />
+                        规则引擎判定结果
+                      </div>
+
+                      <div className="bg-slate-900 rounded-[24px] p-8 min-h-[360px] relative overflow-hidden">
+                        <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(79,70,229,0.15),transparent_50%)]"></div>
+                        
+                        {simulationResults.length > 0 ? (
+                          <div className="relative z-10 space-y-4">
+                            <div className="text-emerald-400 text-xs font-black uppercase tracking-widest mb-6 flex items-center gap-2">
+                              <ShieldCheck className="w-4 h-4" />
+                              命中 {simulationResults.length} 条干预规则
+                            </div>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              {simulationResults.map((result, idx) => {
+                                const group = ALERT_GROUPS[result.trigger.category as keyof typeof ALERT_GROUPS] || ALERT_GROUPS.followup;
+                                return (
+                                  <div key={idx} className="bg-white/5 border border-white/10 rounded-2xl p-5 backdrop-blur-md hover:bg-white/10 transition-all group/res">
+                                    <div className="flex items-center gap-3 mb-3">
+                                      <div className={`w-8 h-8 rounded-lg ${group.bg} flex items-center justify-center`}>
+                                        <group.icon className={`w-4 h-4 ${group.color}`} />
+                                      </div>
+                                      <div className="text-white font-black text-xs truncate">{result.trigger.name}</div>
+                                    </div>
+                                    <div className="space-y-2">
+                                      <div className="text-[10px] text-slate-400 font-medium">触发动作: {result.trigger.action.label}</div>
+                                      <div className="text-[10px] text-emerald-400 font-bold bg-emerald-400/10 px-2 py-1 rounded inline-block">
+                                        判定依据: {result.trigger.condition.type} ({result.trigger.condition.threshold})
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="relative z-10 h-full flex flex-col items-center justify-center text-center py-20">
+                            <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mb-6 border border-white/10">
+                              <Zap className="w-10 h-10 text-slate-700" />
+                            </div>
+                            <h4 className="text-white text-lg font-black mb-2">静默中 - 无规则命中</h4>
+                            <p className="text-slate-500 text-xs font-medium max-w-xs mx-auto">
+                              当前模拟数据未触及任何自动化规则的阈值。您可以尝试增加断服天数或降低体感评分来测试。
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-1 gap-6">
@@ -2421,7 +2422,7 @@ function DashboardContent() {
                   <div className="w-8 h-8 md:w-10 md:h-10 bg-emerald-500 rounded-lg md:rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/20">
                     <Activity className="w-5 h-5 md:w-6 md:h-6 text-white" />
                   </div>
-                  <span className="font-black text-white tracking-tight text-base md:text-lg">PDR <span className="text-emerald-500">v1.7</span></span>
+                  <span className="font-black text-white tracking-tight text-base md:text-lg">PDR <span className="text-emerald-500">v2.0</span></span>
                 </div>
                 <button 
                   onClick={() => setIsMobileMenuOpen(false)}

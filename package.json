@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "npm run dev --workspaces --if-present",
     "build": "npm run build --workspaces --if-present",
+    "deploy": "npm run build -w web && wrangler pages deploy apps/web/out",
     "lint": "npm run lint --workspaces --if-present"
   },
   "devDependencies": {

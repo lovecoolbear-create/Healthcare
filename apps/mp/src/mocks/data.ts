@@ -27,6 +27,7 @@ export const mockProducts: Product[] = [
     spec_quantity: 60,
     spec_unit: '粒/瓶',
     dosage_unit: '粒',
+    price: 298,
     main_efficacy: ['肠道调理', '免疫提升'],
     suggested_frequency: 1,
     shelf_life_after_opening_days: 90,
@@ -43,6 +44,7 @@ export const mockProducts: Product[] = [
     spec_quantity: 100,
     spec_unit: '粒/瓶',
     dosage_unit: '粒',
+    price: 365,
     main_efficacy: ['线粒体能量', '心脏支持'],
     suggested_frequency: 1,
     shelf_life_after_opening_days: 180,
@@ -59,6 +61,7 @@ export const mockProducts: Product[] = [
     spec_quantity: 400,
     spec_unit: '粒/瓶',
     dosage_unit: '粒',
+    price: 450,
     main_efficacy: ['抗炎', '心血管保护'],
     suggested_frequency: 2,
     shelf_life_after_opening_days: 120,
@@ -386,9 +389,9 @@ export const mockProtocol: Protocol = {
       order: 1,
       duration_days: 14,
       actions: [
-        { id: 'act-1', phase_id: 'phase-1', product_id: 'p-1', frequency_per_day: 1, dosage_per_time: '2粒', timing_tag: 'empty_stomach' },
-        { id: 'act-2', phase_id: 'phase-1', product_id: 'p-2', frequency_per_day: 1, dosage_per_time: '2粒', timing_tag: 'with_meal' },
-        { id: 'act-3', phase_id: 'phase-1', product_id: 'p-3', frequency_per_day: 1, dosage_per_time: '2粒', timing_tag: 'with_meal' },
+        { id: 'act-1', phase_id: 'phase-1', product_id: 'p-1', frequency_per_day: 1, dosage_per_time: '2粒', timing_tag: 'empty_stomach', order: 1 },
+        { id: 'act-2', phase_id: 'phase-1', product_id: 'p-2', frequency_per_day: 1, dosage_per_time: '2粒', timing_tag: 'with_meal', order: 2 },
+        { id: 'act-3', phase_id: 'phase-1', product_id: 'p-3', frequency_per_day: 1, dosage_per_time: '2粒', timing_tag: 'with_meal', order: 3 },
       ]
     },
     {
@@ -398,9 +401,9 @@ export const mockProtocol: Protocol = {
       order: 2,
       duration_days: 56,
       actions: [
-        { id: 'act-4', phase_id: 'phase-2', product_id: 'p-1', frequency_per_day: 1, dosage_per_time: '1粒', timing_tag: 'empty_stomach' },
-        { id: 'act-5', phase_id: 'phase-2', product_id: 'p-2', frequency_per_day: 1, dosage_per_time: '1粒', timing_tag: 'with_meal' },
-        { id: 'act-6', phase_id: 'phase-2', product_id: 'p-3', frequency_per_day: 1, dosage_per_time: '1粒', timing_tag: 'with_meal' },
+        { id: 'act-4', phase_id: 'phase-2', product_id: 'p-1', frequency_per_day: 1, dosage_per_time: '1粒', timing_tag: 'empty_stomach', order: 1 },
+        { id: 'act-5', phase_id: 'phase-2', product_id: 'p-2', frequency_per_day: 1, dosage_per_time: '1粒', timing_tag: 'with_meal', order: 2 },
+        { id: 'act-6', phase_id: 'phase-2', product_id: 'p-3', frequency_per_day: 1, dosage_per_time: '1粒', timing_tag: 'with_meal', order: 3 },
       ]
     }
   ],

@@ -8,7 +8,7 @@ import {
   mockProtocol,
   mockIngredients
 } from '../../../mp/src/mocks/data';
-import { Client, Product, Protocol, ProtocolTrigger, Ingredient, FollowUpNote } from '@healthcare/shared';
+import { Client, Product, Protocol, ProtocolTrigger, Ingredient, FollowUpNote, ConflictRule } from '@healthcare/shared';
 import { cloud } from '../services/cloud';
 
 export interface UserTask {
@@ -39,6 +39,7 @@ interface DataContextType {
   ingredients: Ingredient[]; // 新增：成分库状态
   importBatches: ImportBatch[]; // 新增：导入批次记录
   userTasks: UserTask[]; // 新增：手动创建的待办任务
+  conflictRules: ConflictRule[]; // 新增：冲突规则库
   addClient: (client: Client) => Promise<void>;
   updateClient: (client: Client, partial?: Partial<Client>) => Promise<void>;
   deleteClient: (id: string) => Promise<void>;
@@ -60,6 +61,8 @@ interface DataContextType {
   updateUserTask: (task: UserTask, partial?: Partial<UserTask>) => Promise<void>;
   deleteUserTask: (id: string) => Promise<void>;
   addUserLog: (clientId: string, log: Omit<FollowUpNote, 'id' | 'client_id' | 'practitioner_id' | 'created_at'>, tags?: string[]) => Promise<void>;
+  calibrateInventory: (clientId: string, productId: string, stock: number) => Promise<void>;
+  checkConflicts: (clientId: string, protocolId: string) => ConflictRule[]; // 新增：检测冲突逻辑
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -73,6 +76,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [ingredients, setIngredients] = useState<Ingredient[]>([]); // 新增状态
   const [importBatches, setImportBatches] = useState<ImportBatch[]>([]); // 新增状态
   const [userTasks, setUserTasks] = useState<UserTask[]>([]); // 新增状态
+  const [conflictRules, setConflictRules] = useState<ConflictRule[]>([]); // 新增状态
   const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
@@ -86,7 +90,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           cloudProtocols,
           cloudIngredients,
           cloudBatches,
-          cloudTasks
+          cloudTasks,
+          cloudRules
         ] = await Promise.all([
           cloud.getCollection<Client>('clients'),
           cloud.getCollection<Product>('products'),
@@ -95,6 +100,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           cloud.getCollection<Ingredient>('ingredients'),
           cloud.getCollection<ImportBatch>('import_batches'),
           cloud.getCollection<UserTask>('user_tasks'),
+          cloud.getCollection<ConflictRule>('conflict_rules'),
         ]);
 
         if (cloudClients.length > 0) {
@@ -144,6 +150,39 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         } else {
           const stored = localStorage.getItem('hc_user_tasks');
           setUserTasks(stored ? JSON.parse(stored) : []);
+        }
+
+        if (cloudRules.length > 0) {
+          setConflictRules(cloudRules);
+        } else {
+          // 默认内置核心冲突规则 (知识库闭环)
+          const defaultRules: ConflictRule[] = [
+            {
+              id: 'rule-1',
+              medication_keyword: '华法林',
+              ingredient_keyword: '辅酶 Q10',
+              severity: 'high',
+              description: '辅酶 Q10 具有微弱的凝血作用，可能拮抗华法林的抗凝效果，增加血栓风险。',
+              suggestion: '建议停用辅酶 Q10 或在医生监测下严密监测 INR 指标。'
+            },
+            {
+              id: 'rule-2',
+              medication_keyword: '二甲双胍',
+              ingredient_keyword: '维生素 B12',
+              severity: 'medium',
+              description: '二甲双胍可能影响回肠对维生素 B12 的吸收，导致长期缺乏。',
+              suggestion: '建议长期服用二甲双胍的客户额外补充维生素 B12。'
+            },
+            {
+              id: 'rule-3',
+              medication_keyword: '他汀',
+              ingredient_keyword: '辅酶 Q10',
+              severity: 'low',
+              description: '他汀类药物通过阻断甲羟戊酸途径，不仅抑制胆固醇合成，也抑制辅酶 Q10 的合成，可能导致肌痛。',
+              suggestion: '强烈建议服用他汀类药物的客户补充辅酶 Q10 (100-200mg/天)。'
+            }
+          ];
+          setConflictRules(defaultRules);
         }
       } catch (error) {
         console.error('初始化云端数据失败，回退到本地存储:', error);
@@ -339,6 +378,92 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     await updateClient(updatedClient, partialUpdate);
   };
 
+  const calibrateInventory = async (clientId: string, productId: string, stock: number) => {
+    const client = clients.find(c => c.id === clientId);
+    if (!client) return;
+
+    // 获取当前配方，计算每日用量以估算水位
+    const protocol = protocols.find(p => p.id === client.protocol_id);
+    let dailyUsage = 0;
+    
+    if (protocol) {
+      // 找到该产品在配方中的所有动作，计算总用量
+      protocol.phases.forEach(phase => {
+        phase.actions.forEach(action => {
+          if (action.product_id === productId) {
+            const freq = action.frequency_per_day || 0;
+            const dosage = parseFloat(action.dosage_per_time) || 0;
+            dailyUsage += freq * dosage;
+          }
+        });
+      });
+    }
+
+    const remainingDays = dailyUsage > 0 ? Math.floor(stock / dailyUsage) : 999;
+    
+    const currentInventory = client.inventory_status || [];
+    const itemIndex = currentInventory.findIndex(i => i.product_id === productId);
+    
+    let updatedInventory;
+    if (itemIndex > -1) {
+      updatedInventory = [...currentInventory];
+      updatedInventory[itemIndex] = {
+        ...updatedInventory[itemIndex],
+        current_stock: stock,
+        remaining_days: remainingDays,
+        last_calibration_date: new Date().toISOString(),
+      };
+    } else {
+      updatedInventory = [
+        ...currentInventory,
+        {
+          product_id: productId,
+          current_stock: stock,
+          remaining_days: remainingDays,
+          last_calibration_date: new Date().toISOString(),
+        }
+      ];
+    }
+
+    const updatedClient = {
+      ...client,
+      inventory_status: updatedInventory
+    };
+
+    await updateClient(updatedClient, { inventory_status: updatedInventory });
+  };
+
+  const checkConflicts = (clientId: string, protocolId: string): ConflictRule[] => {
+    const client = clients.find(c => c.id === clientId);
+    const protocol = protocols.find(p => p.id === protocolId);
+    if (!client || !protocol) return [];
+
+    const foundConflicts: ConflictRule[] = [];
+    const clientMedications = (client.current_medications || []).join(',').toLowerCase();
+    
+    // 展平配方中的所有成分名称
+    const protocolIngredientNames = protocol.phases.flatMap(phase => 
+      phase.actions.flatMap(action => {
+        const product = products.find(p => p.id === action.product_id);
+        return product?.ingredients?.map(ing => {
+          const ingredient = ingredients.find(i => i.id === ing.ingredient_id);
+          return ingredient?.name.toLowerCase() || '';
+        }) || [];
+      })
+    );
+
+    conflictRules.forEach(rule => {
+      const medMatch = clientMedications.includes(rule.medication_keyword.toLowerCase());
+      const ingredientMatch = protocolIngredientNames.some(name => name.includes(rule.ingredient_keyword.toLowerCase()));
+      
+      if (medMatch && ingredientMatch) {
+        foundConflicts.push(rule);
+      }
+    });
+
+    return foundConflicts;
+  };
+
   const bulkAddProducts = async (newProducts: Product[], batchId: string) => {
     setProducts(prev => [...newProducts, ...prev]);
     const batch: ImportBatch = {
@@ -387,6 +512,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       ingredients,
       importBatches,
       userTasks,
+      conflictRules,
       addClient,
       updateClient,
       deleteClient,
@@ -407,7 +533,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       addUserTask,
       updateUserTask,
       deleteUserTask,
-      addUserLog
+      addUserLog,
+      calibrateInventory,
+      checkConflicts
     }}>
       {children}
     </DataContext.Provider>
