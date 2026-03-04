@@ -572,7 +572,7 @@ export default function ClientPlanPage() {
             <h2 className="text-lg font-bold text-slate-800">
               {activeTab === 'clients' && '客户 360° 动态档案'}
               {activeTab === 'products' && '产品与成分元数据库'}
-              {activeTab === 'templates' && 'SOP 方案与配方库'}
+              {activeTab === 'templates' && '健康调理方案库'}
               {activeTab === 'triggers' && '全局干预触发器配置 (System Triggers)'}
               {activeTab === 'reports' && '数据分析报告 (Data Reports)'}
               {activeTab === 'knowledge' && '营养学知识库 (Nutrition Knowledge)'}
@@ -594,7 +594,7 @@ export default function ClientPlanPage() {
                 if (activeTab === 'templates') {
                    setProtocol({
                      id: `p-${Date.now()}`,
-                     name: '新调理配方 SOP',
+                     name: '新健康调理方案',
                      description: '请在这里输入配方的核心逻辑与目标...',
                      phases: [],
                      triggers: [],
@@ -982,7 +982,7 @@ export default function ClientPlanPage() {
               </div>
             )}
 
-            {/* 3. SOP 方案引擎 */}
+            {/* 3. 健康调理方案引擎 */}
             {activeTab === 'templates' && (
               <div className="space-y-6">
                 <div className="grid grid-cols-4 gap-4">
