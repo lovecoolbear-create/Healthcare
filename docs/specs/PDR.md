@@ -9,6 +9,11 @@
 
 ## 2. 阶段化架构设计 (Web-First Productivity Strategy)
 ### 2.1 阶段一：营养师 Web 端工作助手 (Phase 1: Web Workspace)
+*   **开发策略 (Development Strategy) [v2.1 更新]**：
+    *   **本地优先 (Local-First)**：鉴于 MemFire 实名认证周期，当前阶段采用“本地优先”策略。
+    *   **平滑降级 (Graceful Degradation)**：[cloud.ts](file:///Users/blair/HealthCare/apps/web/src/services/cloud.ts) 已实现自动降级逻辑。当 [memfire.ts](file:///Users/blair/HealthCare/apps/web/src/config/memfire.ts) 中的云端配置为空时，系统自动切换至 LocalStorage 模式，确保开发不中断。
+    *   **一键云同步**：待 MemFire 认证通过并填入配置后，系统将自动激活云端同步功能，实现本地数据向云端的平滑迁移。
+*   **国内基础设施 (Domestic Infrastructure) [v2.1 更新]**：
 *   **定位**：营养师的高效作业平台，解决“记录乱、方案杂、追踪难”的核心痛点。
 *   **核心功能**：
     *   **默认登录工作台 [v1.8 更新]**：营养师登录系统后，默认首页停留在 **Dashboard 工作台**，确保第一时间获取核心待办与业务指标。
@@ -43,11 +48,16 @@
             *   **支持自定义成分**：允许在搜索不到成分时，直接“添加新成分”并自动同步至系统全局成分库。
             *   **持久化同步**：通过 React Context + LocalStorage 实现成分库的自动保存与全局同步，为云端数据库接入做好架构准备。
     *   **智能方案配置 [v2.0 更新]**：
-        *   **重构配方创建流程 (Recipe Creation Refactoring)**：将每个阶段的操作设计为“添加产品（库选择）+ 添加使用方法”的二位一体模式。
+        *   **重构配方创建流程 (Recipe Creation Refactoring) [v2.2 更新]**:
+            *   **动态管理**: 支持阶段 (Phase) 的灵活添加与删除。
+            *   **二位一体模式**: 将每个操作设计为“添加产品（库选择）+ 添加使用方法”。
+            *   **手动产品选择 [v2.2 新增]**: 移除自动添加逻辑，改为从产品库中手动搜索并选择产品。支持按名称、品牌、功效、分类进行多维模糊搜索。
+            *   **产品移除功能**: 支持从已配置的方案中随时删除不需要的产品动作 (Action)，确保方案的精准迭代。
+            *   **服用方法标准化 [v2.2 新增]**: 统一服用方法展示为“一日几次、一次几粒、服用时机”，支持直接在方案卡片中实时编辑并持久化保存。
         *   **深度使用方法定制 (Usage Method Customization)**：
             *   **服用频次** (`frequency_per_day`)：支持自定义每日服用次数。
             *   **单次剂量** (`dosage_per_time`)：支持字符串化输入（如 "1粒"、"5ml"），提供非标单位支持。
-            *   **服用时机标签** (`timing_tag`)：预设“随餐”、“空腹”、“睡前”、“餐后”、“任意时间”等标准化时段。
+            *   **服用时机标签** (`timing_tag`)：预设“随餐 (With Meal)”、“空腹 (Empty Stomach)”、“餐前 (Before Meal)”、“餐后 (After Meal)”、“睡前 (Before Bed)”、“任意时间 (Any Time)”等标准化时段。
             *   **自定义备注** (`usage_instructions`)：支持为每个动作添加个性化使用建议。
         *   **方案贴条自动化**：一键生成脱敏的“调理方案贴条”，自动聚合产品、剂量、频次与时机信息，方便复制给客户。
     *   **代码与资产同步 [v2.0 新增]**：

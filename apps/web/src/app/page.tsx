@@ -14,6 +14,7 @@ import {
   Layers,
   Activity,
   FileEdit,
+  Menu,
   X,
   ShieldCheck,
   Target,
@@ -82,16 +83,24 @@ function DashboardContent() {
     }
   }, [editingProduct]);
 
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
+
   // 当 URL 参数变化时更新 tab
   React.useEffect(() => {
     const tab = searchParams.get('tab') as ActiveTab;
     if (tab) {
       setActiveTab(tab);
+      setIsMobileMenuOpen(false); // 切换 tab 时关闭手机菜单
     }
   }, [searchParams]);
 
   const [searchQuery, setSearchQuery] = React.useState('');
   const [isSilentRuleEnabled, setIsSilentRuleEnabled] = React.useState(true);
+  
+  // 产品选择 Modal 状态
+  const [isProductSelectModalOpen, setIsProductSelectModalOpen] = React.useState(false);
+  const [activePhaseIdForProductSelect, setActivePhaseIdForProductSelect] = React.useState<string | null>(null);
+  const [productSearchQuery, setProductSearchQuery] = React.useState('');
   
   // --- 实战工作助手逻辑 (Work Assistant Logic) ---
   // 核心逻辑：基于“成交意向”与“服务风险”智能生成待办
@@ -638,17 +647,33 @@ function DashboardContent() {
     }
   };
 
-  const handleAddAction = async (phaseId: string) => {
+  const handleDeletePhase = async (phaseId: string) => {
+    if (!currentProtocol) return;
+    const updatedProtocol = {
+      ...currentProtocol,
+      phases: currentProtocol.phases.filter((p: ProtocolPhase) => p.id !== phaseId)
+    };
+    setCurrentProtocol(updatedProtocol);
+    // 只有当配方已经存在于库中时才自动保存阶段删除
+    if (protocols.some(p => p.id === updatedProtocol.id)) {
+      await updateProtocol(updatedProtocol, { phases: updatedProtocol.phases });
+    }
+  };
+
+  const handleSelectProduct = async (phaseId: string, productId: string) => {
     if (!currentProtocol) return;
     const phaseIndex = currentProtocol.phases.findIndex((p: ProtocolPhase) => p.id === phaseId);
     if (phaseIndex === -1) return;
 
+    const product = products.find(p => p.id === productId);
+    if (!product) return;
+
     const newAction: ProtocolAction = {
       id: `act-${Date.now()}`,
       phase_id: phaseId,
-      product_id: products[0]?.id || 'prod-001', // Default to first product
+      product_id: productId,
       frequency_per_day: 1,
-      dosage_per_time: products[0]?.dosage_unit || '1粒',
+      dosage_per_time: product.dosage_unit || '1粒',
       timing_tag: 'with_meal',
       usage_instructions: ''
     };
@@ -665,6 +690,36 @@ function DashboardContent() {
     };
     setCurrentProtocol(updatedProtocol);
     // 只有当配方已经存在于库中时才自动保存动作变更
+    if (protocols.some(p => p.id === updatedProtocol.id)) {
+      await updateProtocol(updatedProtocol, { phases: updatedProtocol.phases });
+    }
+    setIsProductSelectModalOpen(false);
+    setActivePhaseIdForProductSelect(null);
+  };
+
+  const handleAddAction = async (phaseId: string) => {
+    setActivePhaseIdForProductSelect(phaseId);
+    setIsProductSelectModalOpen(true);
+    setProductSearchQuery('');
+  };
+
+  const handleDeleteAction = async (phaseId: string, actionId: string) => {
+    if (!currentProtocol) return;
+    const phaseIndex = currentProtocol.phases.findIndex((p: ProtocolPhase) => p.id === phaseId);
+    if (phaseIndex === -1) return;
+
+    const newPhases = [...currentProtocol.phases];
+    newPhases[phaseIndex] = {
+      ...newPhases[phaseIndex],
+      actions: newPhases[phaseIndex].actions.filter(a => a.id !== actionId)
+    };
+    
+    const updatedProtocol = {
+      ...currentProtocol,
+      phases: newPhases
+    };
+    setCurrentProtocol(updatedProtocol);
+    // 只有当配方已经存在于库中时才自动保存删除动作
     if (protocols.some(p => p.id === updatedProtocol.id)) {
       await updateProtocol(updatedProtocol, { phases: updatedProtocol.phases });
     }
@@ -804,14 +859,14 @@ function DashboardContent() {
         return (
           <>
             {/* 欢迎区域 & 动态统计 (Welcome & Dynamic Stats) */}
-            <div className="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
+            <div className="mb-6 md:mb-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
               <div>
-                <h2 className="text-3xl font-black text-slate-900 tracking-tight">早安，健康管理师</h2>
-                <p className="text-slate-500 font-medium mt-1">今天有 <span className="text-emerald-600 font-black">{todayTotalTodos}</span> 项干预待办，其中 <span className="text-rose-500 font-black">{urgentInterventionsCount}</span> 项紧急。</p>
+                <h2 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight">早安，健康管理师</h2>
+                <p className="text-sm md:text-base text-slate-500 font-medium mt-1">今天有 <span className="text-emerald-600 font-black">{todayTotalTodos}</span> 项干预待办，其中 <span className="text-rose-500 font-black">{urgentInterventionsCount}</span> 项紧急。</p>
               </div>
-              <div className="flex gap-4">
-                <div className="bg-white px-6 py-3 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
-                  <div className="w-10 h-10 bg-amber-50 rounded-xl flex items-center justify-center text-amber-500">
+              <div className="flex flex-col sm:flex-row gap-3 md:gap-4">
+                <div className="bg-white px-4 md:px-6 py-3 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-3 md:gap-4">
+                  <div className="w-10 h-10 bg-amber-50 rounded-xl flex items-center justify-center text-amber-500 shrink-0">
                     <Target className="w-5 h-5" />
                   </div>
                   <div>
@@ -819,8 +874,8 @@ function DashboardContent() {
                     <div className="text-lg font-black text-slate-900">{highValueClientsCount} <span className="text-xs text-slate-300 ml-1">人</span></div>
                   </div>
                 </div>
-                <div className="bg-white px-6 py-3 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
-                  <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-500">
+                <div className="bg-white px-4 md:px-6 py-3 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-3 md:gap-4">
+                  <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-500 shrink-0">
                     <Users className="w-5 h-5" />
                   </div>
                   <div>
@@ -832,7 +887,7 @@ function DashboardContent() {
             </div>
 
             {/* 快速执行动作条 (Quick Access) */}
-            <div className="flex flex-wrap gap-3 mb-8">
+            <div className="flex flex-wrap gap-2 md:gap-3 mb-8">
               {[
                 { label: '一键提醒补货', icon: Package, count: stockAlertClients.length, color: 'text-orange-600', bg: 'bg-orange-50', targetId: 'replenishment-section' },
                 { label: '待处理紧急干预', icon: Zap, count: allAlerts.filter(a => a.alertType === 'urgent').length, color: 'text-rose-600', bg: 'bg-rose-50', targetId: 'alerts-section' },
@@ -847,19 +902,19 @@ function DashboardContent() {
                       element.scrollIntoView({ behavior: 'smooth', block: 'start' });
                     }
                   }}
-                  className={`flex items-center gap-3 px-5 py-3 ${action.bg} rounded-2xl border border-transparent hover:border-slate-200 transition-all group`}
+                  className={`flex items-center gap-2 md:gap-3 px-3 md:px-5 py-2 md:py-3 ${action.bg} rounded-xl md:rounded-2xl border border-transparent hover:border-slate-200 transition-all group`}
                 >
-                  <action.icon className={`w-4 h-4 ${action.color}`} />
-                  <span className="text-[11px] font-black text-slate-700 uppercase tracking-widest">{action.label}</span>
+                  <action.icon className={`w-3.5 h-3.5 md:w-4 h-4 ${action.color}`} />
+                  <span className="text-[9px] md:text-[11px] font-black text-slate-700 uppercase tracking-widest">{action.label}</span>
                   {action.count > 0 && (
-                    <span className={`text-[10px] font-black ${action.color} bg-white px-2 py-0.5 rounded-lg shadow-sm`}>{action.count}</span>
+                    <span className={`text-[9px] md:text-[10px] font-black ${action.color} bg-white px-1.5 md:px-2 py-0.5 rounded-lg shadow-sm`}>{action.count}</span>
                   )}
                 </button>
               ))}
             </div>
 
             {/* Dashboard 顶部核心指标 - 销售与转化视角 */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-8">
               <div 
                 onClick={() => setIsHighPotentialModalOpen(true)}
                 className="bg-slate-900 rounded-3xl p-6 text-white shadow-xl shadow-slate-900/10 relative overflow-hidden group cursor-pointer hover:scale-[1.02] transition-all"
@@ -1114,53 +1169,56 @@ function DashboardContent() {
         return (
           <div className="space-y-10">
             {/* 高价值客户动态雷达 (High-Value Client Dynamic Radar) */}
-            <div>
-              <div className="flex items-center justify-between mb-6">
+            <div className="mb-8 md:mb-12">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
                 <div className="flex items-center gap-3">
-                  <div className="p-2 bg-amber-500 text-white rounded-xl shadow-lg shadow-amber-100">
-                    <Target className="w-5 h-5" />
+                  <div className="p-2.5 bg-amber-500 text-white rounded-2xl shadow-lg shadow-amber-200/50">
+                    <Target className="w-5 h-5 md:w-6 md:h-6" />
                   </div>
-                  <h3 className="text-xl font-black text-slate-900 tracking-tight">高价值客户动态雷达</h3>
+                  <div>
+                    <h3 className="text-lg md:text-xl font-black text-slate-900 tracking-tight">高价值客户动态雷达</h3>
+                    <p className="text-[10px] md:text-xs text-slate-400 font-medium">VIP 客户依从性与价值深度追踪</p>
+                  </div>
                 </div>
                 <button 
                   onClick={() => setActiveTab('reports')}
-                  className="text-[10px] font-black text-slate-400 hover:text-emerald-600 uppercase tracking-[0.2em] transition-colors"
+                  className="text-[10px] font-black text-slate-400 hover:text-emerald-600 uppercase tracking-[0.2em] transition-colors flex items-center gap-2"
                 >
-                  查看完整雷达图表 →
+                  查看完整雷达图表 <ChevronRight className="w-3 h-3" />
                 </button>
               </div>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
                 {highValueClients.length > 0 ? (
                   highValueClients.slice(0, 4).map((client: Client) => (
-                    <div key={client.id} className="bg-white rounded-[32px] border border-slate-100 shadow-sm hover:shadow-xl transition-all p-6 group cursor-pointer relative overflow-hidden">
+                    <div key={client.id} className="bg-white rounded-[32px] border border-slate-100 shadow-sm hover:shadow-xl transition-all p-5 md:p-6 group cursor-pointer relative overflow-hidden">
                       <div className="absolute top-0 right-0 p-4">
                         <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
                       </div>
-                      <div className="flex items-center gap-4 mb-6">
-                        <div className="w-12 h-12 rounded-2xl bg-slate-900 text-white flex items-center justify-center font-black text-lg shadow-lg shadow-slate-200">
+                      <div className="flex items-center gap-4 mb-5 md:mb-6">
+                        <div className="w-10 h-10 md:w-12 md:h-12 rounded-2xl bg-slate-900 text-white flex items-center justify-center font-black text-base md:text-lg shadow-lg shadow-slate-200 shrink-0">
                           {client.name[0]}
                         </div>
-                        <div>
-                          <div className="font-black text-slate-900">{client.name}</div>
-                          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">VIP · {client.tags?.[0] || '长期管理'}</div>
+                        <div className="min-w-0">
+                          <div className="font-black text-slate-900 truncate">{client.name}</div>
+                          <div className="text-[9px] md:text-[10px] font-bold text-slate-400 uppercase tracking-widest truncate">VIP · {client.tags?.[0] || '长期管理'}</div>
                         </div>
                       </div>
                       <div className="space-y-4">
                         <div className="flex justify-between items-end">
-                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">依从性</span>
-                          <span className="text-sm font-black text-emerald-600">{client.adherence_score}%</span>
+                          <span className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest">依从性</span>
+                          <span className="text-xs md:text-sm font-black text-emerald-600">{client.adherence_score}%</span>
                         </div>
                         <div className="w-full h-1.5 bg-slate-50 rounded-full overflow-hidden">
-                          <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${client.adherence_score}%` }}></div>
+                          <div className="h-full bg-emerald-500 rounded-full transition-all duration-1000" style={{ width: `${client.adherence_score}%` }}></div>
                         </div>
                         <div className="pt-4 border-t border-slate-50 flex justify-between items-center">
                           <div className="flex flex-col">
-                            <span className="text-[9px] font-black text-slate-300 uppercase tracking-tighter">累计价值 (LTV)</span>
+                            <span className="text-[8px] md:text-[9px] font-black text-slate-300 uppercase tracking-tighter">累计价值 (LTV)</span>
                             <span className="text-xs font-black text-slate-900">¥ {client.loyalty_points ? client.loyalty_points * 10 : 0}</span>
                           </div>
-                          <Link href={`/clients/${client.id}/plan`} className="p-2 bg-slate-50 rounded-xl text-slate-400 group-hover:bg-slate-900 group-hover:text-white transition-all">
-                            <ChevronRight className="w-4 h-4" />
+                          <Link href={`/clients/plan?id=${client.id}`} className="p-2 bg-slate-50 rounded-xl text-slate-400 group-hover:bg-slate-900 group-hover:text-white transition-all">
+                            <ChevronRight className="w-3.5 h-3.5 md:w-4 h-4" />
                           </Link>
                         </div>
                       </div>
@@ -1175,21 +1233,21 @@ function DashboardContent() {
             </div>
 
             {/* Client Management Table */}
-            <div className="bg-white rounded-[40px] border border-slate-200 shadow-sm overflow-hidden">
-              <div className="px-10 py-8 border-b border-slate-100 flex items-center justify-between bg-white">
+            <div className="bg-white rounded-[32px] md:rounded-[40px] border border-slate-200 shadow-sm overflow-hidden">
+              <div className="px-6 py-6 md:px-10 md:py-8 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between bg-white gap-4">
                 <div>
-                  <h2 className="text-xl font-black text-slate-900 tracking-tight">客户 360° 动态档案管理</h2>
-                  <p className="text-xs text-slate-500 font-medium mt-1">管理您的客户调理方案、实时进度与依从性深度分析</p>
+                  <h2 className="text-lg md:text-xl font-black text-slate-900 tracking-tight">客户 360° 动态档案管理</h2>
+                  <p className="text-[10px] md:text-xs text-slate-500 font-medium mt-1">管理您的客户调理方案、实时进度与依从性深度分析</p>
                 </div>
-                <div className="flex items-center gap-3">
-                  <div className="relative">
-                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <div className="flex items-center gap-2 md:gap-3">
+                  <div className="relative flex-1 sm:flex-none">
+                    <Search className="w-3.5 h-3.5 md:w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input 
                       type="text" 
                       placeholder="搜索客户..." 
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-10 pr-4 py-2 bg-slate-100 border-none rounded-lg text-sm w-64 focus:ring-2 focus:ring-emerald-500 transition-all outline-none"
+                      className="pl-9 pr-4 py-2 bg-slate-100 border-none rounded-xl text-xs md:text-sm w-full sm:w-48 md:w-64 focus:ring-2 focus:ring-emerald-500 transition-all outline-none"
                     />
                   </div>
                   <button 
@@ -1198,24 +1256,24 @@ function DashboardContent() {
                       setImportStep('upload');
                       setIsImportModalOpen(true);
                     }}
-                    className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-colors text-sm font-bold shadow-sm"
+                    className="flex items-center gap-2 px-3 md:px-4 py-2 bg-white border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-colors text-[11px] md:text-sm font-bold shadow-sm shrink-0"
                   >
-                    <Database className="w-4 h-4 text-emerald-500" />
-                    批量导入
+                    <Database className="w-3.5 h-3.5 md:w-4 h-4 text-emerald-500" />
+                    <span className="hidden sm:inline">批量导入</span>
                   </button>
                 </div>
               </div>
               
               <div className="overflow-x-auto">
-                <table className="w-full text-left">
+                <table className="w-full text-left min-w-[700px] md:min-w-0">
                   <thead>
-                    <tr className="bg-slate-50/50 text-slate-500 text-[11px] font-bold uppercase tracking-wider">
-                      <th className="px-8 py-4">客户信息</th>
-                      <th className="px-8 py-4">依从性 (Adherence)</th>
-                      <th className="px-8 py-4">库存水位 (Inventory)</th>
-                      <th className="px-8 py-4">积分</th>
-                      <th className="px-8 py-4">最后更新</th>
-                      <th className="px-8 py-4 text-right">管理操作</th>
+                    <tr className="bg-slate-50/50 text-slate-500 text-[10px] md:text-[11px] font-bold uppercase tracking-wider">
+                      <th className="px-6 md:px-8 py-4">客户信息</th>
+                      <th className="px-6 md:px-8 py-4">依从性</th>
+                      <th className="px-6 md:px-8 py-4">库存水位</th>
+                      <th className="px-6 md:px-8 py-4 hidden sm:table-cell">积分</th>
+                      <th className="px-6 md:px-8 py-4 hidden md:table-cell">最后更新</th>
+                      <th className="px-6 md:px-8 py-4 text-right">操作</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -1232,27 +1290,27 @@ function DashboardContent() {
                               : 'hover:bg-slate-50/50'
                           }`}
                         >
-                          <td className="px-8 py-5">
+                          <td className="px-6 md:px-8 py-4 md:py-5">
                             <div className="flex items-center gap-3">
-                              <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${
+                              <div className={`w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center font-bold text-xs md:text-sm shrink-0 ${
                                 isHighlighted ? 'bg-rose-200 text-rose-700' : 'bg-emerald-100 text-emerald-700'
                               }`}>
                                 {client.name[0]}
                               </div>
-                              <div>
+                              <div className="min-w-0">
                                 <div className="flex items-center gap-2">
-                                  <div className="text-sm font-bold text-slate-900">{client.name}</div>
+                                  <div className="text-xs md:text-sm font-bold text-slate-900 truncate">{client.name}</div>
                                   {isHighlighted && (
-                                    <span className="px-1.5 py-0.5 bg-rose-500 text-[9px] text-white rounded font-black uppercase tracking-tighter">重点关注</span>
+                                    <span className="px-1.5 py-0.5 bg-rose-500 text-[8px] text-white rounded font-black uppercase tracking-tighter shrink-0">重点</span>
                                   )}
                                 </div>
-                                <div className="text-xs text-slate-500">{client.phone}</div>
+                                <div className="text-[10px] md:text-xs text-slate-500 truncate">{client.phone}</div>
                               </div>
                             </div>
                           </td>
-                          <td className="px-8 py-5">
+                          <td className="px-6 md:px-8 py-4 md:py-5">
                             <div className="flex items-center gap-2">
-                              <div className={`text-sm font-black ${
+                              <div className={`text-xs md:text-sm font-black ${
                                 !client.adherence_score ? 'text-slate-300' :
                                 client.adherence_score >= 90 ? 'text-emerald-600' :
                                 client.adherence_score >= 70 ? 'text-amber-500' : 'text-rose-500'
@@ -1263,60 +1321,62 @@ function DashboardContent() {
                               {client.adherence_trend === 'down' && <TrendingDown className="w-3 h-3 text-rose-500" />}
                             </div>
                           </td>
-                          <td className="px-8 py-5">
+                          <td className="px-6 md:px-8 py-4 md:py-5">
                             {minRemainingDays !== null ? (
                               <div className="flex flex-col gap-1">
-                                <span className={`text-[10px] font-bold ${minRemainingDays < 3 ? 'text-rose-600' : minRemainingDays < 10 ? 'text-amber-600' : 'text-slate-400'}`}>
-                                  {minRemainingDays} 天后断货
+                                <span className={`text-[9px] md:text-[10px] font-bold ${minRemainingDays < 3 ? 'text-rose-600' : minRemainingDays < 10 ? 'text-amber-600' : 'text-slate-400'}`}>
+                                  {minRemainingDays} 天断货
                                 </span>
-                                <div className="w-24 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                <div className="w-16 md:w-24 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                                   <div 
-                                    className={`h-full transition-all ${minRemainingDays < 3 ? 'bg-rose-500' : minRemainingDays < 10 ? 'bg-amber-500' : 'bg-emerald-500'}`} 
+                                    className={`h-full transition-all duration-1000 ${minRemainingDays < 3 ? 'bg-rose-500' : minRemainingDays < 10 ? 'bg-amber-500' : 'bg-emerald-500'}`} 
                                     style={{ width: `${Math.min(100, (minRemainingDays / 30) * 100)}%` }}
                                   ></div>
                                 </div>
                               </div>
                             ) : (
-                              <span className="text-xs text-slate-300">未配置库存</span>
+                              <span className="text-[10px] md:text-xs text-slate-300">未配置</span>
                             )}
                           </td>
-                          <td className="px-8 py-5">
+                          <td className="px-6 md:px-8 py-4 md:py-5 hidden sm:table-cell">
                             <div className="flex items-center gap-1.5">
-                              <span className="text-sm font-bold text-slate-700">{client.loyalty_points || 0}</span>
+                              <span className="text-xs md:text-sm font-bold text-slate-700">{client.loyalty_points || 0}</span>
                               {(client.loyalty_points || 0) >= 1000 && (
-                                <span className="text-[10px] bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded font-bold">高价值</span>
+                                <span className="text-[8px] md:text-[10px] bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded font-bold">高价值</span>
                               )}
                             </div>
                           </td>
-                          <td className="px-8 py-5 text-sm text-slate-500 font-medium">
+                          <td className="px-6 md:px-8 py-4 md:py-5 text-[10px] md:text-sm text-slate-500 font-medium hidden md:table-cell">
                             {new Date(client.created_at).toLocaleDateString()}
                           </td>
-                          <td className="px-8 py-5 text-right flex justify-end items-center gap-4">
-                            <button 
-                              onClick={() => handleEditClient(client)}
-                              className="p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-emerald-600 transition-colors"
-                              title="编辑客户档案"
-                            >
-                              <FileEdit className="w-4 h-4" />
-                            </button>
-                            <button 
-                              onClick={async () => {
-                                if (window.confirm(`确定要删除客户 ${client.name} 吗？此操作不可撤销。`)) {
-                                  await deleteClient(client.id);
-                                }
-                              }}
-                              className="p-2 hover:bg-rose-50 rounded-full text-slate-400 hover:text-rose-600 transition-colors"
-                              title="删除客户"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                            <Link 
-                              href={`/clients/${client.id}/plan`}
-                              className="inline-flex items-center gap-1 text-sm font-bold text-emerald-600 hover:text-emerald-700"
-                            >
-                              查看详情
-                              <ChevronRight className="w-4 h-4" />
-                            </Link>
+                          <td className="px-6 md:px-8 py-4 md:py-5 text-right">
+                            <div className="flex justify-end items-center gap-1 md:gap-4">
+                              <button 
+                                onClick={() => handleEditClient(client)}
+                                className="p-1.5 md:p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-emerald-600 transition-colors"
+                                title="编辑客户档案"
+                              >
+                                <FileEdit className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                              </button>
+                              <button 
+                                onClick={async () => {
+                                  if (window.confirm(`确定要删除客户 ${client.name} 吗？此操作不可撤销。`)) {
+                                    await deleteClient(client.id);
+                                  }
+                                }}
+                                className="p-1.5 md:p-2 hover:bg-rose-50 rounded-full text-slate-400 hover:text-rose-600 transition-colors hidden sm:block"
+                                title="删除客户"
+                              >
+                                <Trash2 className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                              </button>
+                              <Link 
+                                href={`/clients/plan?id=${client.id}`}
+                                className="inline-flex items-center gap-0.5 md:gap-1 text-[10px] md:text-sm font-bold text-emerald-600 hover:text-emerald-700 whitespace-nowrap"
+                              >
+                                <span className="hidden sm:inline">查看</span>详情
+                                <ChevronRight className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                              </Link>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -1329,19 +1389,19 @@ function DashboardContent() {
         );
       case 'products':
         return (
-          <div className="space-y-8">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="space-y-6 md:space-y-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
               {/* Add Product Card */}
               <div className="flex flex-col gap-4">
                 <button 
                   onClick={handleAddProduct}
-                  className="border-2 border-dashed border-slate-200 rounded-3xl p-6 flex flex-col items-center justify-center gap-3 hover:bg-slate-50 hover:border-emerald-300 transition-all group min-h-[140px]"
+                  className="border-2 border-dashed border-slate-200 rounded-3xl p-5 md:p-6 flex flex-col items-center justify-center gap-3 hover:bg-slate-50 hover:border-emerald-300 transition-all group min-h-[120px] md:min-h-[140px]"
                 >
-                  <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center group-hover:bg-emerald-100 transition-colors">
-                    <Plus className="w-6 h-6 text-slate-300 group-hover:text-emerald-500 transition-colors" />
+                  <div className="w-10 h-10 md:w-12 md:h-12 bg-slate-100 rounded-2xl flex items-center justify-center group-hover:bg-emerald-100 transition-colors">
+                    <Plus className="w-5 h-5 md:w-6 md:h-6 text-slate-300 group-hover:text-emerald-500 transition-colors" />
                   </div>
                   <div className="text-center">
-                    <div className="text-sm font-black text-slate-400 group-hover:text-emerald-600 transition-colors">录入新产品/成分</div>
+                    <div className="text-xs md:text-sm font-black text-slate-400 group-hover:text-emerald-600 transition-colors">录入新产品/成分</div>
                   </div>
                 </button>
                 <button 
@@ -1350,77 +1410,64 @@ function DashboardContent() {
                     setImportStep('upload');
                     setIsImportModalOpen(true);
                   }}
-                  className="border-2 border-slate-200 rounded-3xl p-6 flex flex-col items-center justify-center gap-3 hover:bg-emerald-50 hover:border-emerald-200 transition-all group min-h-[140px] bg-white"
+                  className="border-2 border-slate-200 rounded-3xl p-5 md:p-6 flex flex-col items-center justify-center gap-3 hover:bg-emerald-50 hover:border-emerald-200 transition-all group min-h-[120px] md:min-h-[140px] bg-white"
                 >
-                  <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center group-hover:bg-emerald-100 transition-colors">
-                    <Database className="w-6 h-6 text-emerald-500" />
+                  <div className="w-10 h-10 md:w-12 md:h-12 bg-emerald-50 rounded-2xl flex items-center justify-center group-hover:bg-emerald-100 transition-colors">
+                    <Database className="w-5 h-5 md:w-6 md:h-6 text-emerald-500" />
                   </div>
                   <div className="text-center">
-                    <div className="text-sm font-black text-emerald-600">批量导入产品库</div>
-                    <p className="text-[10px] text-slate-400 font-medium mt-1">支持 Excel 模板快速入库</p>
+                    <div className="text-xs md:text-sm font-black text-emerald-600">批量导入产品库</div>
+                    <p className="text-[9px] md:text-[10px] text-slate-400 font-medium mt-1">支持 Excel 模板快速入库</p>
                   </div>
                 </button>
               </div>
 
               {products.map((product: Product) => (
-                <div key={product.id} className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm hover:shadow-xl hover:border-emerald-200 transition-all group relative">
-                  <button 
-                    onClick={() => handleEditProduct(product)}
-                    className="absolute top-4 right-4 p-2 bg-slate-50 text-slate-400 rounded-xl opacity-0 group-hover:opacity-100 hover:bg-emerald-50 hover:text-emerald-600 transition-all"
-                    title="编辑产品详情"
-                  >
-                    <FileEdit className="w-4 h-4" />
-                  </button>
-                  <button 
-                    onClick={async () => {
-                      if (window.confirm(`确定要删除产品 ${product.name} 吗？`)) {
-                        await deleteProduct(product.id);
-                      }
-                    }}
-                    className="absolute top-4 right-14 p-2 bg-slate-50 text-slate-400 rounded-xl opacity-0 group-hover:opacity-100 hover:bg-rose-50 hover:text-rose-600 transition-all"
-                    title="删除产品"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                  <div className="flex justify-between items-start mb-4">
-                    <div className="px-2 py-1 bg-slate-100 rounded text-[10px] font-bold text-slate-500 uppercase tracking-widest">{product.brand}</div>
-                    <div className="flex items-center gap-2">
-                      <button 
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          if (window.confirm(`确定要删除产品 ${product.name} 吗？`)) {
-                            await deleteProduct(product.id);
-                          }
-                        }}
-                        className="p-1.5 hover:bg-rose-50 rounded-full text-slate-300 hover:text-rose-600 transition-colors"
-                        title="删除产品"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                      <span className="text-[10px] font-bold text-slate-400">库存: {Math.floor(Math.random() * 50) + 10}</span>
-                    </div>
+                <div key={product.id} className="bg-white border border-slate-200 rounded-3xl p-5 md:p-6 shadow-sm hover:shadow-xl hover:border-emerald-200 transition-all group relative overflow-hidden">
+                  <div className="absolute top-4 right-4 flex items-center gap-1 md:gap-2">
+                    <button 
+                      onClick={() => handleEditProduct(product)}
+                      className="p-1.5 md:p-2 bg-slate-50 text-slate-400 rounded-xl md:opacity-0 group-hover:opacity-100 hover:bg-emerald-50 hover:text-emerald-600 transition-all"
+                      title="编辑产品详情"
+                    >
+                      <FileEdit className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                    </button>
+                    <button 
+                      onClick={async () => {
+                        if (window.confirm(`确定要删除产品 ${product.name} 吗？`)) {
+                          await deleteProduct(product.id);
+                        }
+                      }}
+                      className="p-1.5 md:p-2 bg-slate-50 text-slate-400 rounded-xl md:opacity-0 group-hover:opacity-100 hover:bg-rose-50 hover:text-rose-600 transition-all"
+                      title="删除产品"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                    </button>
                   </div>
-                  <h3 className="text-lg font-bold text-slate-800 mb-1">{product.name}</h3>
+                  <div className="flex justify-between items-start mb-4 pr-16 md:pr-0">
+                    <div className="px-2 py-1 bg-slate-100 rounded text-[9px] md:text-[10px] font-bold text-slate-500 uppercase tracking-widest truncate max-w-[120px] md:max-w-none">{product.brand}</div>
+                  </div>
+                  <h3 className="text-base md:text-lg font-bold text-slate-800 mb-2 truncate" title={product.name}>{product.name}</h3>
                   <div className="flex flex-wrap gap-1 mb-4">
                     {product.main_efficacy?.map(eff => (
-                      <span key={eff} className="px-1.5 py-0.5 bg-emerald-50 text-emerald-600 text-[10px] font-bold rounded border border-emerald-100">
+                      <span key={eff} className="px-1.5 py-0.5 bg-emerald-50 text-emerald-600 text-[9px] md:text-[10px] font-bold rounded border border-emerald-100">
                         {eff}
                       </span>
                     ))}
                   </div>
                   
                   <div className="space-y-4">
-                    <div className="bg-slate-50 rounded-xl p-3">
-                      <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase mb-2 tracking-wider">
+                    <div className="bg-slate-50 rounded-2xl p-3 md:p-4">
+                      <div className="flex items-center gap-2 text-[9px] md:text-[10px] font-bold text-slate-400 uppercase mb-3 tracking-wider">
                         <FlaskConical className="w-3 h-3" /> 核心成分
                       </div>
-                      <div className="space-y-2">
+                      <div className="space-y-2.5">
                         {product.ingredients?.map(ing => {
                           const ingredientInfo = mockIngredients.find(i => i.id === ing.ingredient_id);
                           return (
                             <div key={ing.ingredient_id} className="flex justify-between items-center">
-                              <span className="text-xs font-bold text-slate-700">{ingredientInfo?.name}</span>
-                              <span className="text-xs font-medium text-slate-500">{ing.amount_per_unit}{ing.unit}</span>
+                              <span className="text-xs font-bold text-slate-700 truncate mr-4">{ingredientInfo?.name}</span>
+                              <span className="text-[11px] md:text-xs font-medium text-slate-500 shrink-0">{ing.amount_per_unit}{ing.unit}</span>
                             </div>
                           );
                         })}
@@ -1435,7 +1482,7 @@ function DashboardContent() {
       case 'templates':
         if (!currentProtocol) {
           const emptyProtocolsCount = protocols.filter(p => 
-            (!p.name || p.name === '新健康调理方案' || p.name.trim() === '') && 
+            (!p.name || p.name === '新调理配方 SOP' || p.name.trim() === '') && 
             p.phases.length === 0 && 
             p.triggers.length === 0
           ).length;
@@ -1540,26 +1587,11 @@ function DashboardContent() {
               </button>
 
               <div className="flex items-center gap-3">
-                <button 
-                  onClick={async () => {
-                    if (!currentProtocol.name.trim()) {
-                      alert('请先输入配方名称');
-                      return;
-                    }
-                    await addProtocol(currentProtocol);
-                    alert('配方已保存');
-                    setCurrentProtocol(null);
-                  }}
-                  className="flex items-center gap-2 px-6 py-2 bg-emerald-600 text-white rounded-xl font-bold text-sm hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-600/20"
-                >
-                  <Save className="w-4 h-4" />
-                  保存配方
-                </button>
               </div>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-3xl p-8 shadow-sm">
-              <div className="flex justify-between items-start mb-8 border-b border-slate-100 pb-8">
+            <div className="bg-white border border-slate-200 rounded-3xl p-5 md:p-8 shadow-sm">
+              <div className="flex flex-col md:flex-row justify-between items-start mb-6 md:mb-8 border-b border-slate-100 pb-6 md:pb-8 gap-6">
                 <div className="w-full space-y-4">
                   <div>
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">配方名称</label>
@@ -1570,7 +1602,7 @@ function DashboardContent() {
                         const updated = { ...currentProtocol, name: e.target.value };
                         setCurrentProtocol(updated);
                       }}
-                      className="w-full text-2xl font-black text-slate-900 bg-transparent border-none focus:ring-0 p-0 placeholder-slate-300"
+                      className="w-full text-xl md:text-2xl font-black text-slate-900 bg-transparent border-none focus:ring-0 p-0 placeholder-slate-300"
                       placeholder="输入配方名称 (如: 12周肝脏修复方案)"
                     />
                   </div>
@@ -1582,7 +1614,7 @@ function DashboardContent() {
                         const updated = { ...currentProtocol, description: e.target.value };
                         setCurrentProtocol(updated);
                       }}
-                      className="w-full text-slate-500 text-sm bg-transparent border-none focus:ring-0 p-0 resize-none placeholder-slate-300"
+                      className="w-full text-slate-500 text-xs md:text-sm bg-transparent border-none focus:ring-0 p-0 resize-none placeholder-slate-300"
                       placeholder="输入配方描述..."
                       rows={2}
                     />
@@ -1591,16 +1623,18 @@ function DashboardContent() {
               </div>
 
               <div className="relative">
-                <div className="absolute left-8 top-0 bottom-0 w-px bg-slate-100"></div>
-                <div className="space-y-12">
+                <div className="absolute left-4 md:left-8 top-0 bottom-0 w-px bg-slate-100"></div>
+                <div className="space-y-8 md:space-y-12">
                   {currentProtocol.phases.map((phase: ProtocolPhase, idx: number) => (
-                    <div key={phase.id} className="relative pl-20">
-                      <div className="absolute left-6 top-1 w-4 h-4 rounded-full bg-white border-4 border-emerald-500 z-10"></div>
-                      <div className="flex items-center gap-4 mb-4">
-                        <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded uppercase tracking-widest">Phase {idx + 1}</span>
-                        <h4 className="text-xl font-bold text-slate-800">{phase.name}</h4>
-                        <span className="text-sm text-slate-400 font-medium flex items-center gap-1">
-                          <Calendar className="w-4 h-4" /> 持续 
+                    <div key={phase.id} className="relative pl-10 md:pl-20">
+                      <div className="absolute left-2 md:left-6 top-1 w-4 h-4 rounded-full bg-white border-4 border-emerald-500 z-10"></div>
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 md:gap-4 mb-4">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] md:text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded uppercase tracking-widest shrink-0">Phase {idx + 1}</span>
+                          <h4 className="text-lg md:text-xl font-bold text-slate-800 truncate">{phase.name}</h4>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs md:text-sm text-slate-400 font-medium">
+                          <Calendar className="w-4 h-4 shrink-0" /> 持续 
                           <input 
                             type="number" 
                             value={phase.duration_days} 
@@ -1615,43 +1649,82 @@ function DashboardContent() {
                                 await updateProtocol(updatedProtocol, { phases: updatedPhases });
                               }
                             }}
-                            className="w-12 bg-transparent border-b border-slate-200 focus:border-emerald-500 focus:ring-0 p-0 text-center font-bold text-slate-700"
+                            className="w-10 md:w-12 bg-transparent border-b border-slate-200 focus:border-emerald-500 focus:ring-0 p-0 text-center font-bold text-slate-700"
                           /> 天
-                        </span>
+                          <button 
+                            onClick={() => handleDeletePhase(phase.id)}
+                            className="p-1.5 hover:bg-rose-50 rounded-lg group/del transition-colors ml-auto sm:hidden"
+                            title="删除阶段"
+                          >
+                            <Trash2 className="w-4 h-4 text-slate-300 group-hover/del:text-rose-500 transition-colors" />
+                          </button>
+                        </div>
+                        <button 
+                          onClick={() => handleDeletePhase(phase.id)}
+                          className="p-1.5 hover:bg-rose-50 rounded-lg group/del transition-colors ml-auto hidden sm:block"
+                          title="删除阶段"
+                        >
+                          <Trash2 className="w-4 h-4 text-slate-300 group-hover/del:text-rose-500 transition-colors" />
+                        </button>
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {phase.actions.map((action: ProtocolAction) => {
                           const product = products.find(p => p.id === action.product_id);
                           return (
-                            <div key={action.id} className="bg-slate-50 border border-slate-100 rounded-2xl p-4 flex items-center gap-4">
-                              <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center border border-slate-100 shadow-sm">
+                            <div key={action.id} className="bg-slate-50 border border-slate-100 rounded-2xl p-4 flex items-center gap-3 md:gap-4">
+                              <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center border border-slate-100 shadow-sm shrink-0">
                                 <Package className="w-5 h-5 text-slate-400" />
                               </div>
-                              <div className="flex-1">
-                                <div className="text-sm font-bold text-slate-700 mb-1">{product?.name || '未知产品'}</div>
-                                <div className="flex items-center gap-3">
-                                  <div className="flex items-center gap-1 bg-white border border-slate-100 px-2 py-0.5 rounded-lg shadow-sm">
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs md:text-sm font-bold text-slate-700 mb-2 truncate">{product?.name || '未知产品'}</div>
+                                <div className="flex flex-wrap items-center gap-1.5 md:gap-2">
+                                  {/* 一日几次 */}
+                                  <div className="flex items-center gap-1 bg-white border border-slate-100 px-2 py-1 rounded-xl shadow-sm">
+                                    <span className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-tighter">一日</span>
                                     <input 
                                       type="number" 
-                                      value={action.dosage} 
+                                      value={action.frequency_per_day || 1} 
                                       onChange={async (e) => {
-                                        const newDosage = parseFloat(e.target.value) || 0;
+                                        const newVal = parseInt(e.target.value) || 1;
                                         const newPhases = [...currentProtocol.phases];
                                         const pIdx = newPhases.findIndex(p => p.id === phase.id);
                                         const aIdx = newPhases[pIdx].actions.findIndex(a => a.id === action.id);
-                                        newPhases[pIdx].actions[aIdx] = { ...action, dosage: newDosage };
+                                        newPhases[pIdx].actions[aIdx] = { ...action, frequency_per_day: newVal };
                                         const updatedProtocol = { ...currentProtocol, phases: newPhases };
                                         setCurrentProtocol(updatedProtocol);
                                         if (protocols.some(p => p.id === updatedProtocol.id)) {
                                           await updateProtocol(updatedProtocol, { phases: newPhases });
                                         }
                                       }}
-                                      className="w-8 text-center text-[10px] font-bold text-slate-700 bg-transparent border-none p-0 focus:ring-0"
+                                      className="w-5 md:w-6 text-center text-[10px] md:text-[11px] font-black text-emerald-600 bg-transparent border-none p-0 focus:ring-0"
                                     />
-                                    <span className="text-[10px] text-slate-400 font-bold">{product?.dosage_unit || '粒'}</span>
+                                    <span className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-tighter">次</span>
+                                  </div>
+
+                                  {/* 一次几粒 */}
+                                  <div className="flex items-center gap-1 bg-white border border-slate-100 px-2 py-1 rounded-xl shadow-sm">
+                                    <span className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-tighter">一次</span>
+                                    <input 
+                                      type="text" 
+                                      value={action.dosage_per_time || product?.dosage_unit || '1粒'} 
+                                      onChange={async (e) => {
+                                        const newVal = e.target.value;
+                                        const newPhases = [...currentProtocol.phases];
+                                        const pIdx = newPhases.findIndex(p => p.id === phase.id);
+                                        const aIdx = newPhases[pIdx].actions.findIndex(a => a.id === action.id);
+                                        newPhases[pIdx].actions[aIdx] = { ...action, dosage_per_time: newVal };
+                                        const updatedProtocol = { ...currentProtocol, phases: newPhases };
+                                        setCurrentProtocol(updatedProtocol);
+                                        if (protocols.some(p => p.id === updatedProtocol.id)) {
+                                          await updateProtocol(updatedProtocol, { phases: newPhases });
+                                        }
+                                      }}
+                                      className="w-8 md:w-10 text-center text-[10px] md:text-[11px] font-black text-emerald-600 bg-transparent border-none p-0 focus:ring-0"
+                                    />
                                   </div>
                                   
+                                  {/* 服用时机 */}
                                   <select 
                                     value={action.timing_tag}
                                     onChange={async (e) => {
@@ -1666,13 +1739,23 @@ function DashboardContent() {
                                         await updateProtocol(updatedProtocol, { phases: newPhases });
                                       }
                                     }}
-                                    className="text-[10px] font-bold text-slate-500 bg-white border border-slate-100 px-2 py-0.5 rounded-lg shadow-sm focus:ring-0 outline-none"
+                                    className="text-[9px] md:text-[10px] font-black text-slate-600 bg-white border border-slate-100 px-2 py-1 rounded-xl shadow-sm focus:ring-0 outline-none cursor-pointer hover:border-emerald-200 transition-colors"
                                   >
                                     <option value="with_meal">随餐</option>
                                     <option value="empty_stomach">空腹</option>
-                                    <option value="after_meal">餐后</option>
                                     <option value="before_meal">餐前</option>
+                                    <option value="after_meal">餐后</option>
+                                    <option value="before_bed">睡前</option>
+                                    <option value="any_time">任意</option>
                                   </select>
+
+                                  <button 
+                                    onClick={() => handleDeleteAction(phase.id, action.id)}
+                                    className="p-1.5 hover:bg-rose-50 rounded-lg group/del transition-colors ml-auto"
+                                    title="删除产品"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5 text-slate-300 group-hover/del:text-rose-500 transition-colors" />
+                                  </button>
                                 </div>
                               </div>
                             </div>
@@ -1690,60 +1773,78 @@ function DashboardContent() {
                   ))}
                   <button 
                     onClick={handleAddPhase}
-                    className="w-full py-4 border-2 border-dashed border-slate-200 rounded-2xl flex items-center justify-center gap-2 hover:bg-slate-50 hover:border-emerald-300 transition-all group"
+                    className="w-full py-3 md:py-4 border-2 border-dashed border-slate-200 rounded-2xl flex items-center justify-center gap-2 hover:bg-slate-50 hover:border-emerald-300 transition-all group"
                   >
                     <Plus className="w-5 h-5 text-slate-300 group-hover:text-emerald-500 transition-colors" />
-                    <span className="text-sm font-bold text-slate-400 group-hover:text-emerald-600 transition-colors">添加新阶段 (New Phase)</span>
+                    <span className="text-xs md:text-sm font-bold text-slate-400 group-hover:text-emerald-600 transition-colors">添加新阶段</span>
                   </button>
                 </div>
               </div>
+            </div>
+
+            <div className="flex justify-center pt-4">
+              <button 
+                onClick={async () => {
+                  if (!currentProtocol.name.trim()) {
+                    alert('请先输入配方名称');
+                    return;
+                  }
+                  await addProtocol(currentProtocol);
+                  alert('配方已保存');
+                  setCurrentProtocol(null);
+                }}
+                className="flex items-center gap-2 md:gap-3 px-8 md:px-12 py-3 md:py-4 bg-emerald-600 text-white rounded-2xl font-black text-base md:text-lg hover:bg-emerald-700 hover:scale-105 active:scale-95 transition-all shadow-2xl shadow-emerald-600/40 group w-full sm:w-auto justify-center"
+              >
+                <Save className="w-5 h-5 md:w-6 md:h-6 group-hover:rotate-12 transition-transform" />
+                保存配方
+              </button>
             </div>
           </div>
         );
       case 'triggers':
         return (
-          <div className="space-y-8">
+          <div className="space-y-6 md:space-y-8">
             {/* 全局静默规则提示 (PDR 1.4) */}
-            <div className="bg-slate-900 text-white rounded-3xl p-6 shadow-xl flex items-center justify-between overflow-hidden relative group">
+            <div className="bg-slate-900 text-white rounded-3xl p-5 md:p-6 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between overflow-hidden relative group gap-6">
               <div className="absolute right-0 top-0 opacity-10 translate-x-1/4 -translate-y-1/4 group-hover:scale-110 transition-transform duration-700">
                 <Target className="w-48 h-48" />
               </div>
-              <div className="relative z-10 flex items-center gap-6">
-                <div className={`w-14 h-14 ${isSilentRuleEnabled ? 'bg-emerald-500' : 'bg-slate-700'} rounded-2xl flex items-center justify-center shadow-lg transition-colors duration-500 shadow-emerald-500/20`}>
-                  <ShieldCheck className="w-8 h-8 text-white" />
+              <div className="relative z-10 flex flex-col md:flex-row md:items-center gap-4 md:gap-6">
+                <div className={`w-12 h-12 md:w-14 md:h-14 ${isSilentRuleEnabled ? 'bg-emerald-500' : 'bg-slate-700'} rounded-2xl flex items-center justify-center shadow-lg transition-colors duration-500 shadow-emerald-500/20 shrink-0`}>
+                  <ShieldCheck className="w-6 h-6 md:w-8 md:h-8 text-white" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2 mb-1">
-                    <h3 className="text-lg font-black tracking-tight">全局静默规则 (Global Silent Rule)</h3>
-                    <span className={`text-[10px] font-black ${isSilentRuleEnabled ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 'bg-slate-700 text-slate-400 border-slate-600'} px-2 py-0.5 rounded-full border uppercase transition-colors`}>
+                    <h3 className="text-base md:text-lg font-black tracking-tight">全局静默规则</h3>
+                    <span className={`text-[8px] md:text-[10px] font-black ${isSilentRuleEnabled ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 'bg-slate-700 text-slate-400 border-slate-600'} px-2 py-0.5 rounded-full border uppercase transition-colors`}>
                       {isSilentRuleEnabled ? 'Active' : 'Disabled'}
                     </span>
                   </div>
-                  <p className="text-slate-400 text-xs font-medium max-w-md">
+                  <p className="text-slate-400 text-[10px] md:text-xs font-medium max-w-md">
                     同一客户在 <span className="text-white font-bold">48 小时内</span> 最多触发 <span className="text-white font-bold">1 个非紧急</span> 红点告警。
                     系统将自动合并同类项，确保您的工作台始终保持丝滑顺畅。
                     <span className="block mt-1 text-rose-400">注意：紧急 (Critical) 告警不受此限。</span>
                   </p>
                 </div>
               </div>
-              <div className="relative z-10 flex items-center gap-6">
-                <div className="hidden md:block text-right">
+              <div className="relative z-10 flex items-center justify-between sm:justify-end gap-6 border-t border-slate-800 pt-4 sm:border-t-0 sm:pt-0">
+                <div className="text-left md:text-right">
                   <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">静默周期</div>
-                  <div className="text-2xl font-black text-white">48h</div>
+                  <div className="text-xl md:text-2xl font-black text-white">48h</div>
                 </div>
                 <button 
                   onClick={() => setIsSilentRuleEnabled(!isSilentRuleEnabled)}
-                  className={`w-14 h-8 rounded-full relative transition-colors duration-300 ${isSilentRuleEnabled ? 'bg-emerald-500' : 'bg-slate-700'}`}
+                  className={`w-12 h-7 md:w-14 md:h-8 rounded-full relative transition-colors duration-300 ${isSilentRuleEnabled ? 'bg-emerald-500' : 'bg-slate-700'} shrink-0`}
                 >
-                  <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-all duration-300 ${isSilentRuleEnabled ? 'left-7' : 'left-1'}`} />
+                  <div className={`absolute top-1 w-5 h-5 md:w-6 md:h-6 bg-white rounded-full transition-all duration-300 ${isSilentRuleEnabled ? 'left-6 md:left-7' : 'left-1'}`} />
                 </button>
               </div>
             </div>
 
             <div className="grid grid-cols-1 gap-6">
               {['compliance', 'inventory', 'symptom', 'growth'].map(category => (
-                <div key={category} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-                  <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
+                <div key={category} className="bg-white border border-slate-200 rounded-2xl p-5 md:p-6 shadow-sm">
+                  <h3 className="text-base md:text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
                     {category === 'compliance' && <Activity className="w-5 h-5 text-indigo-500" />}
                     {category === 'inventory' && <Package className="w-5 h-5 text-orange-500" />}
                     {category === 'symptom' && <Activity className="w-5 h-5 text-rose-500" />}
@@ -1752,19 +1853,19 @@ function DashboardContent() {
                      category === 'inventory' ? '库存预警机制' : 
                      category === 'symptom' ? '体感风险干预' : '增长与关系维护'}
                   </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     {triggers.filter(t => t.category === category).map(trigger => (
-                      <div key={trigger.id} className="p-5 bg-slate-50 rounded-2xl border border-slate-100 group relative overflow-hidden hover:shadow-md transition-all">
+                      <div key={trigger.id} className="p-4 md:p-5 bg-slate-50 rounded-2xl border border-slate-100 group relative overflow-hidden hover:shadow-md transition-all">
                         <div className="absolute top-0 right-0 w-16 h-16 -mr-8 -mt-8 bg-emerald-500/5 rounded-full group-hover:scale-150 transition-transform duration-500"></div>
                         
                         <div className="relative z-10">
                           <div className="flex justify-between items-start mb-4">
-                            <div>
-                              <div className="font-black text-slate-800 text-sm tracking-tight mb-0.5">{trigger.name}</div>
-                              <div className="text-[10px] text-slate-400 font-medium">{trigger.description || '自定义自动化干预规则'}</div>
+                            <div className="min-w-0">
+                              <div className="font-black text-slate-800 text-xs md:text-sm tracking-tight mb-0.5 truncate">{trigger.name}</div>
+                              <div className="text-[9px] md:text-[10px] text-slate-400 font-medium truncate">{trigger.description || '自定义自动化干预规则'}</div>
                             </div>
-                            <div className="flex items-center gap-2">
-                              <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest ${
+                            <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
+                              <span className={`text-[8px] md:text-[9px] font-black px-1.5 md:px-2 py-0.5 rounded-full uppercase tracking-widest ${
                                 trigger.action?.priority === 'critical' ? 'bg-rose-500 text-white shadow-lg shadow-rose-200' :
                                 trigger.action?.priority === 'high' ? 'bg-amber-500 text-white shadow-lg shadow-amber-200' : 'bg-slate-200 text-slate-600'
                               }`}>
@@ -1775,52 +1876,52 @@ function DashboardContent() {
                                   setEditingTrigger(trigger);
                                   setIsTriggerModalOpen(true);
                                 }}
-                                className="p-1.5 bg-white text-slate-400 rounded-lg shadow-sm hover:text-emerald-600 hover:scale-110 transition-all"
+                                className="p-1 md:p-1.5 bg-white text-slate-400 rounded-lg shadow-sm hover:text-emerald-600 hover:scale-110 transition-all"
                               >
-                                <FileEdit className="w-3.5 h-3.5" />
+                                <FileEdit className="w-3 md:w-3.5 h-3 md:h-3.5" />
                               </button>
                             </div>
                           </div>
 
                           <div className="space-y-3">
                             {/* IF Condition */}
-                            <div className="flex items-start gap-3">
-                              <div className="w-8 h-8 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center shrink-0 mt-0.5 shadow-sm group-hover:bg-indigo-500 group-hover:border-indigo-500 transition-colors duration-300">
-                                <span className="text-[10px] font-black text-indigo-600 group-hover:text-white">如果</span>
+                            <div className="flex items-start gap-2 md:gap-3">
+                              <div className="w-7 h-7 md:w-8 md:h-8 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center shrink-0 mt-0.5 shadow-sm group-hover:bg-indigo-500 group-hover:border-indigo-500 transition-colors duration-300">
+                                <span className="text-[9px] md:text-[10px] font-black text-indigo-600 group-hover:text-white">如果</span>
                               </div>
-                              <div className="flex-1">
-                                <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
-                                  条件池 (Condition Pool)
+                              <div className="flex-1 min-w-0">
+                                <div className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+                                  条件池
                                   <div className="h-px flex-1 bg-slate-100"></div>
                                 </div>
-                                <div className="text-xs font-bold text-slate-700 bg-white border border-slate-100 px-3 py-2 rounded-xl inline-block shadow-sm group-hover:border-indigo-200 transition-colors">
-                                  {trigger.condition?.type === 'adherence_streak' && `行为维度：连续 ${trigger.condition?.threshold} 天断服`}
-                                  {trigger.condition?.type === 'stock_level' && `库存维度：库存水位 <= ${trigger.condition?.threshold} 天`}
-                                  {trigger.condition?.type === 'vital_trend' && `体感维度：趋势指标连续下降 ${trigger.condition?.threshold} 次`}
-                                  {trigger.condition?.type === 'protocol_duration' && `时间维度：方案执行满 ${trigger.condition?.threshold} 天周期`}
+                                <div className="text-[10px] md:text-xs font-bold text-slate-700 bg-white border border-slate-100 px-2 md:px-3 py-1.5 md:py-2 rounded-xl inline-block shadow-sm group-hover:border-indigo-200 transition-colors truncate max-w-full">
+                                  {trigger.condition?.type === 'adherence_streak' && `连续 ${trigger.condition?.threshold} 天断服`}
+                                  {trigger.condition?.type === 'stock_level' && `库存水位 <= ${trigger.condition?.threshold} 天`}
+                                  {trigger.condition?.type === 'vital_trend' && `趋势指标下降 ${trigger.condition?.threshold} 次`}
+                                  {trigger.condition?.type === 'protocol_duration' && `方案执行满 ${trigger.condition?.threshold} 天`}
                                 </div>
                               </div>
                             </div>
 
                             {/* THEN Action */}
-                            <div className="flex items-start gap-3">
-                              <div className="w-8 h-8 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center shrink-0 mt-0.5 shadow-sm group-hover:bg-emerald-500 group-hover:border-emerald-500 transition-colors duration-300">
-                                <span className="text-[10px] font-black text-emerald-600 group-hover:text-white">就</span>
+                            <div className="flex items-start gap-2 md:gap-3">
+                              <div className="w-7 h-7 md:w-8 md:h-8 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center shrink-0 mt-0.5 shadow-sm group-hover:bg-emerald-500 group-hover:border-emerald-500 transition-colors duration-300">
+                                <span className="text-[9px] md:text-[10px] font-black text-emerald-600 group-hover:text-white">就</span>
                               </div>
-                              <div className="flex-1">
-                                <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
-                                  动作池 (Action Pool)
+                              <div className="flex-1 min-w-0">
+                                <div className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+                                  动作池
                                   <div className="h-px flex-1 bg-slate-100"></div>
                                 </div>
                                 <div className="space-y-2">
                                   <div className="flex items-center gap-2">
-                                    <span className="text-[9px] font-black bg-slate-900 text-white px-2 py-1 rounded uppercase leading-none tracking-tighter shadow-sm">
+                                    <span className="text-[8px] md:text-[9px] font-black bg-slate-900 text-white px-1.5 md:px-2 py-0.5 md:py-1 rounded uppercase leading-none tracking-tighter shadow-sm">
                                       {trigger.action?.type === 'push_red_dot' ? '红点通知' : 
                                        trigger.action?.type === 'send_template' ? '模版推送' : '列表高亮'}
                                     </span>
-                                    <span className="text-xs font-black text-slate-700">{trigger.action?.label}</span>
+                                    <span className="text-[10px] md:text-xs font-black text-slate-700 truncate">{trigger.action?.label}</span>
                                   </div>
-                                  <div className="text-[11px] text-slate-500 italic bg-slate-100/50 p-3 rounded-xl border border-slate-200/50 line-clamp-2 leading-relaxed" title={trigger.action?.payload_template}>
+                                  <div className="text-[10px] md:text-[11px] text-slate-500 italic bg-slate-100/50 p-2 md:p-3 rounded-xl border border-slate-200/50 line-clamp-2 leading-relaxed" title={trigger.action?.payload_template}>
                                     “{trigger.action?.payload_template}”
                                   </div>
                                 </div>
@@ -1838,50 +1939,50 @@ function DashboardContent() {
         );
       case 'knowledge':
         return (
-          <div className="bg-white p-12 rounded-2xl border border-slate-200 shadow-sm text-center">
-            <div className="w-20 h-20 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6">
-              <Database className="w-10 h-10" />
+          <div className="bg-white p-6 md:p-12 rounded-[32px] border border-slate-200 shadow-sm text-center">
+            <div className="w-16 h-16 md:w-20 md:h-20 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4 md:mb-6">
+              <Database className="w-8 h-8 md:w-10 md:h-10" />
             </div>
-            <h2 className="text-2xl font-bold text-slate-800 mb-2">营养学知识库</h2>
-            <p className="text-slate-500 mb-8 max-w-md mx-auto">
-              汇集最新国际营养学研究成果与临床指南，为干预方案提供严谨的科学依据...
+            <h2 className="text-xl md:text-2xl font-black text-slate-800 mb-2">营养学知识库 (Scientific Knowledge Base)</h2>
+            <p className="text-xs md:text-base text-slate-500 mb-6 md:mb-8 max-w-md mx-auto font-medium leading-relaxed px-4">
+              汇集最新国际营养学研究成果与临床指南，为您的个性化调理方案提供严谨、前沿的科学依据。
             </p>
-            <div className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-colors cursor-pointer">
-              <Search className="w-5 h-5" />
-              检索科研文献
+            <div className="inline-flex items-center gap-2 px-6 py-3 md:px-8 md:py-4 bg-emerald-600 text-white rounded-2xl font-black hover:bg-emerald-700 transition-all cursor-pointer text-sm md:text-base shadow-xl shadow-emerald-600/20 active:scale-95 group">
+              <Search className="w-4 h-4 md:w-5 md:h-5 group-hover:scale-110 transition-transform" />
+              检索科研文献库
             </div>
           </div>
         );
       case 'reports':
         return (
-          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="space-y-6 md:space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             {/* 1. 核心业务漏斗与来源分析 (Sales, Conversion & Sources) */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-2 bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm">
-                <div className="flex justify-between items-start mb-8">
+              <div className="lg:col-span-2 bg-white p-5 md:p-8 rounded-[32px] border border-slate-200 shadow-sm">
+                <div className="flex flex-col sm:flex-row justify-between items-start mb-6 md:mb-8 gap-4">
                   <div>
-                    <h3 className="text-xl font-black text-slate-800">补货转化与复购漏斗</h3>
-                    <p className="text-xs text-slate-500 font-medium mt-1">分析从“库存预警”到“完成订单”的转化路径</p>
+                    <h3 className="text-lg md:text-xl font-black text-slate-800">补货转化与复购漏斗</h3>
+                    <p className="text-[10px] md:text-xs text-slate-500 font-medium mt-1">分析从“库存预警”到“完成订单”的转化路径</p>
                   </div>
-                  <select className="bg-slate-50 border-none rounded-xl text-[10px] font-black uppercase tracking-widest px-4 py-2 focus:ring-2 focus:ring-emerald-500 outline-none">
+                  <select className="bg-slate-50 border-none rounded-xl text-[10px] font-black uppercase tracking-widest px-4 py-2 focus:ring-2 focus:ring-emerald-500 outline-none w-full sm:w-auto">
                     <option>过去 30 天</option>
                     <option>过去 90 天</option>
                   </select>
                 </div>
                 
-                <div className="relative pt-4">
+                <div className="relative pt-2 md:pt-4">
                   {[
-                    { label: '库存预警生成 (Alerts)', value: 124, color: 'bg-slate-900', width: '100%' },
-                    { label: '有效随访触达 (Follow-ups)', value: 98, color: 'bg-slate-700', width: '79%' },
-                    { label: '意向确认 (Intent)', value: 65, color: 'bg-emerald-600', width: '52%' },
-                    { label: '订单支付完成 (Converted)', value: 42, color: 'bg-emerald-400', width: '34%' },
+                    { label: '库存预警生成', value: 124, color: 'bg-slate-900', width: '100%' },
+                    { label: '有效随访触达', value: 98, color: 'bg-slate-700', width: '79%' },
+                    { label: '意向确认', value: 65, color: 'bg-emerald-600', width: '52%' },
+                    { label: '订单支付完成', value: 42, color: 'bg-emerald-400', width: '34%' },
                   ].map((step, i) => (
-                    <div key={i} className="mb-6 last:mb-0">
-                      <div className="flex justify-between items-end mb-2">
-                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.15em]">{step.label}</span>
-                        <span className="text-lg font-black text-slate-800">{step.value} <span className="text-[10px] text-slate-400 font-bold ml-1">个</span></span>
+                    <div key={i} className="mb-4 md:mb-6 last:mb-0">
+                      <div className="flex justify-between items-end mb-1.5 md:mb-2">
+                        <span className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-[0.15em]">{step.label}</span>
+                        <span className="text-base md:text-lg font-black text-slate-800">{step.value} <span className="text-[10px] text-slate-400 font-bold ml-0.5 md:ml-1">个</span></span>
                       </div>
-                      <div className="h-4 bg-slate-50 rounded-full overflow-hidden flex items-center p-1">
+                      <div className="h-3 md:h-4 bg-slate-50 rounded-full overflow-hidden flex items-center p-0.5 md:p-1">
                         <div className={`h-full ${step.color} rounded-full transition-all duration-1000`} style={{ width: step.width }}></div>
                       </div>
                     </div>
@@ -1890,36 +1991,36 @@ function DashboardContent() {
               </div>
 
               <div className="space-y-6">
-                <div className="bg-slate-900 rounded-[32px] p-8 text-white flex flex-col justify-between overflow-hidden relative group h-[280px]">
+                <div className="bg-slate-900 rounded-[32px] p-6 md:p-8 text-white flex flex-col justify-between overflow-hidden relative group h-[240px] md:h-[280px]">
                   <div className="absolute right-0 top-0 opacity-10 translate-x-1/4 -translate-y-1/4 group-hover:scale-110 transition-transform duration-700">
-                    <TrendingUp className="w-64 h-64" />
+                    <TrendingUp className="w-48 h-48 md:w-64 md:h-64" />
                   </div>
                   <div className="relative z-10">
-                    <h3 className="text-xl font-black mb-1">复购增长预测</h3>
-                    <p className="text-slate-400 text-xs font-medium">下月预计补货业绩规模</p>
-                    <div className="mt-8">
-                      <div className="text-4xl font-black tracking-tight">¥ 28,400</div>
-                      <div className="flex items-center gap-2 mt-2 text-emerald-400 text-xs font-bold">
-                        <TrendingUp className="w-4 h-4" />
+                    <h3 className="text-lg md:text-xl font-black mb-1">复购增长预测</h3>
+                    <p className="text-slate-400 text-[10px] md:text-xs font-medium">下月预计补货业绩规模</p>
+                    <div className="mt-6 md:mt-8">
+                      <div className="text-3xl md:text-4xl font-black tracking-tight">¥ 28,400</div>
+                      <div className="flex items-center gap-2 mt-2 text-emerald-400 text-[10px] md:text-xs font-bold">
+                        <TrendingUp className="w-3.5 h-3.5 md:w-4 md:h-4" />
                         预计比本月提升 15.4%
                       </div>
                     </div>
                   </div>
-                  <div className="relative z-10 mt-6">
-                    <button className="w-full py-3 bg-emerald-500 text-white rounded-2xl font-black text-xs hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-500/20">
+                  <div className="relative z-10 mt-4 md:mt-6">
+                    <button className="w-full py-2.5 md:py-3 bg-emerald-500 text-white rounded-2xl font-black text-[10px] md:text-xs hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-500/20 uppercase tracking-widest">
                       查看详情预测报告
                     </button>
                   </div>
                 </div>
 
                 {/* 客户来源分布 (从 Dashboard 迁移) */}
-                <div className="bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm flex-1">
+                <div className="bg-white p-6 md:p-8 rounded-[32px] border border-slate-200 shadow-sm flex-1">
                   <div className="flex items-center justify-between mb-6">
-                    <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                    <h3 className="text-xs md:text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
                       <Users className="w-4 h-4 text-emerald-500" />
                       客户来源分布
                     </h3>
-                    <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-2 py-1 rounded">规模分析</span>
+                    <span className="text-[9px] md:text-[10px] font-bold text-slate-400 bg-slate-50 px-2 py-1 rounded">规模分析</span>
                   </div>
                   
                   <div className="space-y-4">
@@ -1928,12 +2029,12 @@ function DashboardContent() {
                       const percentage = clients.length > 0 ? Math.round((count / clients.length) * 100) : 0;
                       
                       return (
-                        <div key={key} className="space-y-2">
-                          <div className="flex justify-between items-center text-[10px]">
+                        <div key={key} className="space-y-1.5 md:space-y-2">
+                          <div className="flex justify-between items-center text-[9px] md:text-[10px]">
                             <span className="font-bold text-slate-600">{label}</span>
                             <span className="font-black text-slate-900">{count} 人 <span className="text-slate-300 ml-1">({percentage}%)</span></span>
                           </div>
-                          <div className="w-full h-1.5 bg-slate-50 rounded-full overflow-hidden">
+                          <div className="w-full h-1 md:h-1.5 bg-slate-50 rounded-full overflow-hidden">
                             <div 
                               className="h-full bg-emerald-500 transition-all duration-1000" 
                               style={{ width: `${percentage}%` }}
@@ -1949,18 +2050,18 @@ function DashboardContent() {
 
 
             {/* 2. 交付质量：健康指标改善明细 (Delivery Quality: Health Improvement Detail) */}
-            <div className="bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm">
-              <div className="flex justify-between items-center mb-8">
+            <div className="bg-white p-5 md:p-8 rounded-[32px] border border-slate-200 shadow-sm">
+              <div className="flex flex-col xl:flex-row justify-between xl:items-center mb-6 md:mb-8 gap-6">
                 <div>
-                  <h3 className="text-xl font-black text-slate-800">交付质量：健康指标改善深度分析</h3>
-                  <p className="text-xs text-slate-500 font-medium mt-1">基于 PDR 的好转客户明细与趋势分析</p>
+                  <h3 className="text-lg md:text-xl font-black text-slate-800">交付质量：健康指标改善深度分析</h3>
+                  <p className="text-[10px] md:text-xs text-slate-500 font-medium mt-1">基于 PDR 的好转客户明细与趋势分析</p>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   {healthImprovementMetrics.map(metric => (
                     <button 
                       key={metric.id}
                       onClick={() => setSelectedMetricId(metric.id)}
-                      className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                      className={`px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-all ${
                         selectedMetricId === metric.id 
                         ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/10' 
                         : 'bg-slate-50 text-slate-400 hover:bg-slate-100'
@@ -1972,27 +2073,27 @@ function DashboardContent() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+              <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 md:gap-8">
                 {/* 改善概览列表 (从 Dashboard 迁移) */}
-                <div className="lg:col-span-1 border-r border-slate-50 pr-8">
-                  <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                <div className="lg:col-span-1 border-b lg:border-b-0 lg:border-r border-slate-50 pb-6 lg:pb-0 lg:pr-8">
+                  <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 md:mb-6 flex items-center gap-2">
                     <Activity className="w-3.5 h-3.5" />
                     各维度好转率概览
                   </div>
-                  <div className="space-y-6">
+                  <div className="grid grid-cols-2 lg:grid-cols-1 gap-4 lg:gap-6">
                     {healthImprovementMetrics.map((item, i) => (
                       <div 
                         key={i}
                         onClick={() => setSelectedMetricId(item.id)}
-                        className={`group cursor-pointer p-3 -mx-3 rounded-2xl transition-all ${
+                        className={`group cursor-pointer p-3 -mx-2 rounded-2xl transition-all ${
                           selectedMetricId === item.id ? 'bg-slate-50 border border-slate-100' : 'hover:bg-slate-50/50'
                         }`}
                       >
-                        <div className="flex justify-between text-[10px] font-bold mb-2">
-                          <span className={`${selectedMetricId === item.id ? 'text-emerald-600' : 'text-slate-700'}`}>{item.label}</span>
-                          <span className="text-slate-500">{item.val}%</span>
+                        <div className="flex justify-between text-[9px] md:text-[10px] font-bold mb-1.5 md:mb-2">
+                          <span className={`truncate mr-2 ${selectedMetricId === item.id ? 'text-emerald-600' : 'text-slate-700'}`}>{item.label}</span>
+                          <span className="text-slate-500 shrink-0">{item.val}%</span>
                         </div>
-                        <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                        <div className="h-1 md:h-1.5 bg-slate-100 rounded-full overflow-hidden">
                           <div 
                             className={`h-full ${item.color} rounded-full transition-all duration-1000`} 
                             style={{ width: `${item.val}%` }}
@@ -2005,30 +2106,30 @@ function DashboardContent() {
 
                 <div className="lg:col-span-3">
                   {selectedMetric ? (
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
                       {/* 左侧：统计卡片 */}
-                      <div className="space-y-4">
-                        <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
-                          <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">当前改善率</div>
+                      <div className="space-y-4 md:col-span-1">
+                        <div className="p-5 md:p-6 bg-slate-50 rounded-2xl border border-slate-100">
+                          <div className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 md:mb-4">当前改善率</div>
                           <div className="flex items-end gap-2">
-                            <div className="text-4xl font-black text-slate-900">{selectedMetric.val}%</div>
-                            <div className="text-xs font-bold text-emerald-600 mb-1.5 flex items-center gap-1">
+                            <div className="text-3xl md:text-4xl font-black text-slate-900">{selectedMetric.val}%</div>
+                            <div className="text-[10px] md:text-xs font-bold text-emerald-600 mb-1 md:mb-1.5 flex items-center gap-1">
                               <TrendingUp className="w-3 h-3" />
                               +4.2%
                             </div>
                           </div>
-                          <div className="mt-4 flex justify-between text-[10px] font-bold text-slate-500 uppercase">
+                          <div className="mt-4 flex justify-between text-[9px] md:text-[10px] font-bold text-slate-500 uppercase">
                             <span>好转: {selectedMetric.improved} 人</span>
-                            <span>目标客户: {selectedMetric.total} 人</span>
+                            <span>目标: {selectedMetric.total} 人</span>
                           </div>
-                          <div className="w-full h-1.5 bg-slate-200 rounded-full mt-2 overflow-hidden">
+                          <div className="w-full h-1 md:h-1.5 bg-slate-200 rounded-full mt-2 overflow-hidden">
                             <div className={`h-full ${selectedMetric.color} rounded-full`} style={{ width: `${selectedMetric.val}%` }}></div>
                           </div>
                         </div>
 
                         {/* 模拟趋势图 (SVG) */}
-                        <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
-                          <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">近 6 个月改善趋势</div>
+                        <div className="p-5 md:p-6 bg-slate-50 rounded-2xl border border-slate-100 hidden md:block">
+                          <div className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">近 6 个月改善趋势</div>
                           <div className="h-32 flex items-end justify-between gap-2 px-2">
                             {[45, 52, 48, 65, 72, selectedMetric.val].map((v, i) => (
                               <div key={i} className="flex-1 flex flex-col items-center group">
@@ -2110,7 +2211,7 @@ function DashboardContent() {
                 <h3 className="text-xl font-black text-slate-800 mb-8">健康调理方案有效性排行</h3>
                 <div className="space-y-6">
                   {[
-                    { name: '深度肠道修复方案', clients: 45, score: 94, trend: 'up' },
+                    { name: '深度肠道修复 SOP', clients: 45, score: 94, trend: 'up' },
                     { name: '压力性失眠调理', clients: 32, score: 88, trend: 'up' },
                     { name: '女性代谢平衡方案', clients: 28, score: 82, trend: 'down' },
                     { name: '高强度脑力补剂组', clients: 15, score: 76, trend: 'up' },
@@ -2200,87 +2301,226 @@ function DashboardContent() {
 
   return (
     <div className="min-h-screen bg-slate-50 flex">
-      <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
+      {/* 全局 Modals */}
+      {isProductSelectModalOpen && activePhaseIdForProductSelect && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl md:rounded-[32px] w-full max-w-2xl max-h-[90vh] md:max-h-[80vh] shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+            <div className="p-5 md:p-8 border-b border-slate-100 flex items-center justify-between shrink-0">
+              <div className="flex-1 min-w-0 pr-4">
+                <h3 className="text-lg md:text-2xl font-black text-slate-900 tracking-tight truncate">选择产品 (Select Product)</h3>
+                <p className="text-slate-500 text-[10px] md:text-sm font-medium mt-0.5 md:mt-1 truncate">从产品库中选择要添加到此阶段的产品</p>
+              </div>
+              <button 
+                onClick={() => {
+                  setIsProductSelectModalOpen(false);
+                  setActivePhaseIdForProductSelect(null);
+                }}
+                className="p-2 md:p-3 hover:bg-slate-100 rounded-xl md:rounded-2xl text-slate-400 hover:text-slate-600 transition-all shrink-0"
+              >
+                <X className="w-5 h-5 md:w-6 md:h-6" />
+              </button>
+            </div>
+            
+            <div className="p-4 md:p-8 shrink-0">
+              <div className="relative">
+                <Search className="absolute left-4 top-2.5 md:top-3.5 w-4 h-4 md:w-5 md:h-5 text-slate-400" />
+                <input 
+                  type="text" 
+                  placeholder="搜索产品名称、品牌或功效..."
+                  value={productSearchQuery}
+                  onChange={(e) => setProductSearchQuery(e.target.value)}
+                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl md:rounded-2xl py-2 md:py-3 pl-10 md:pl-12 pr-4 text-xs md:text-sm focus:border-emerald-500 focus:ring-0 outline-none transition-all font-bold"
+                  autoFocus
+                />
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-4 pb-4 md:px-8 md:pb-8 custom-scrollbar">
+              <div className="grid grid-cols-1 gap-2 md:gap-3">
+                {products
+                  .filter(p => {
+                    const searchLower = productSearchQuery.toLowerCase();
+                    return (
+                      p.name.toLowerCase().includes(searchLower) ||
+                      p.brand?.toLowerCase().includes(searchLower) ||
+                      p.main_efficacy?.some(e => e.toLowerCase().includes(searchLower)) ||
+                      p.category?.toLowerCase().includes(searchLower)
+                    );
+                  })
+                  .map(product => (
+                    <button
+                      key={product.id}
+                      onClick={() => handleSelectProduct(activePhaseIdForProductSelect, product.id)}
+                      className="flex items-center gap-3 md:gap-4 p-3 md:p-4 bg-slate-50 border-2 border-slate-50 rounded-xl md:rounded-2xl hover:bg-white hover:border-emerald-500 hover:shadow-xl hover:shadow-emerald-500/5 transition-all text-left group"
+                    >
+                      <div className="w-9 h-9 md:w-12 md:h-12 bg-white rounded-lg md:rounded-xl flex items-center justify-center border border-slate-100 group-hover:border-emerald-100 transition-colors shrink-0">
+                        <Package className="w-4 h-4 md:w-6 md:h-6 text-slate-300 group-hover:text-emerald-500" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span className="text-xs md:text-sm font-black text-slate-800 truncate">{product.name}</span>
+                          <span className="shrink-0 text-[8px] md:text-[10px] font-bold text-slate-400 bg-white px-1.5 md:px-2 py-0.5 rounded border border-slate-100 uppercase tracking-widest">{product.brand}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 md:gap-2 overflow-hidden">
+                          <span className="shrink-0 text-[8px] md:text-[10px] font-bold text-slate-400">规格: {product.spec_quantity}{product.spec_unit}</span>
+                          <span className="text-slate-200">|</span>
+                          <div className="flex gap-1 overflow-hidden">
+                            {product.main_efficacy?.slice(0, 2).map((eff, i) => (
+                              <span key={i} className="shrink-0 text-[8px] md:text-[9px] font-black text-emerald-600 bg-emerald-50 px-1 md:px-1.5 py-0.5 rounded whitespace-nowrap">#{eff}</span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-1 shrink-0">
+                        <span className="hidden sm:inline-block text-[8px] md:text-[10px] font-black text-slate-400 bg-slate-100 px-1.5 md:px-2 py-0.5 rounded uppercase tracking-tighter">
+                          {product.category || '未分类'}
+                        </span>
+                        <ChevronRight className="w-4 h-4 md:w-5 md:h-5 text-slate-300 group-hover:text-emerald-500 transition-all transform group-hover:translate-x-1" />
+                      </div>
+                    </button>
+                  ))}
+                {products.filter(p => {
+                  const searchLower = productSearchQuery.toLowerCase();
+                  return (
+                    p.name.toLowerCase().includes(searchLower) ||
+                    p.brand?.toLowerCase().includes(searchLower) ||
+                    p.main_efficacy?.some(e => e.toLowerCase().includes(searchLower)) ||
+                    p.category?.toLowerCase().includes(searchLower)
+                  );
+                }).length === 0 && (
+                  <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+                    <Package className="w-12 h-12 mb-4 opacity-20" />
+                    <p className="text-sm font-bold">未找到匹配的产品</p>
+                    <p className="text-xs mt-1">请尝试其他关键词搜索</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Desktop Sidebar */}
+      <div className="hidden lg:block shrink-0">
+        <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
+      </div>
+
+      {/* Mobile Sidebar Drawer */}
+      {isMobileMenuOpen && (
+        <div className="fixed inset-0 z-[100] lg:hidden">
+          {/* Overlay */}
+          <div 
+            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300"
+            onClick={() => setIsMobileMenuOpen(false)}
+          />
+          {/* Sidebar Container */}
+          <div className="absolute left-0 top-0 bottom-0 w-64 md:w-72 bg-slate-900 shadow-2xl animate-in slide-in-from-left duration-300">
+            <div className="h-full flex flex-col">
+              <div className="p-5 md:p-6 flex items-center justify-between border-b border-slate-800 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 md:w-10 md:h-10 bg-emerald-500 rounded-lg md:rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                    <Activity className="w-5 h-5 md:w-6 md:h-6 text-white" />
+                  </div>
+                  <span className="font-black text-white tracking-tight text-base md:text-lg">PDR <span className="text-emerald-500">v1.7</span></span>
+                </div>
+                <button 
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="p-1.5 md:p-2 hover:bg-slate-800 rounded-lg md:rounded-xl transition-colors text-slate-400"
+                >
+                  <X className="w-5 h-5 md:w-6 md:h-6" />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                <Sidebar 
+                  activeTab={activeTab} 
+                  onTabChange={(tab) => {
+                    setActiveTab(tab);
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className="w-full bg-slate-900 text-slate-300 flex flex-col"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 主内容区 */}
-      <div className="flex-1 flex flex-col h-screen overflow-hidden">
-        <header className="h-16 bg-white border-b border-slate-200 px-8 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-4">
-            <h2 className="text-lg font-bold text-slate-800">
+      <div className="flex-1 flex flex-col h-screen overflow-hidden min-w-0">
+        <header className="h-14 md:h-16 bg-white border-b border-slate-200 px-4 md:px-8 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2 md:gap-4 overflow-hidden">
+            <button 
+              onClick={() => setIsMobileMenuOpen(true)}
+              className="p-1.5 md:p-2 hover:bg-slate-100 rounded-lg md:rounded-xl lg:hidden text-slate-600 transition-colors shrink-0"
+            >
+              <Menu className="w-5 h-5 md:w-6 md:h-6" />
+            </button>
+            <h2 className="text-xs md:text-lg font-bold text-slate-800 truncate">
               {activeTab === 'dashboard' && '工作台 Dashboard'}
               {activeTab === 'clients' && '客户 360° 动态档案'}
               {activeTab === 'products' && '产品与成分元数据库'}
-              {activeTab === 'templates' && '健康调理方案库'}
+              {activeTab === 'templates' && '健康调理配方库'}
               {activeTab === 'triggers' && '全局干预触发器配置 (System Triggers)'}
               {activeTab === 'reports' && '数据分析报告 (Data Reports)'}
               {activeTab === 'knowledge' && '营养学知识库 (Nutrition Knowledge)'}
             </h2>
           </div>
-          <div className="flex items-center gap-4">
-            <div className="relative">
+          <div className="flex items-center gap-2 md:gap-4 shrink-0 ml-2 md:ml-4">
+            <div className="relative hidden sm:block">
               <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
               <input 
                 type="text"
                 placeholder="搜索全局元数据..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-64 bg-slate-100 border-none rounded-xl py-2 pl-10 pr-4 text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                className="w-24 md:w-64 bg-slate-100 border-none rounded-xl py-2 pl-10 pr-4 text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
               />
             </div>
-            <button 
-                onClick={async () => {
-                  if (activeTab === 'dashboard') {
-                    setNewTaskMode('log');
-                    setIsNewTaskModalOpen(true);
-                  }
-                  if (activeTab === 'clients') await handleAddClient();
-                  if (activeTab === 'products') await handleAddProduct();
-                  if (activeTab === 'templates') {
-                    const newProtocol: Protocol = {
-                      id: `p-${Date.now()}`,
-                      name: '',
-                      description: '',
-                      phases: [],
-                      triggers: [],
-                      practitioner_id: 'p-001',
-                      created_at: new Date().toISOString(),
-                      updated_at: new Date().toISOString()
-                    };
-                    setCurrentProtocol(newProtocol);
-                  }
-                  if (activeTab === 'triggers') setIsTriggerModalOpen(true);
-                }}
-              className="flex items-center gap-2 bg-slate-900 text-white px-6 py-2 rounded-xl text-sm font-bold hover:bg-slate-800 transition-all shadow-lg shadow-slate-900/10"
-            >
-              <Plus className="w-4 h-4" />
-              {activeTab === 'dashboard' && '新建待办/日志'}
-              {activeTab === 'clients' && '新增客户档案'}
-              {activeTab === 'products' && '新增产品/成分'}
-              {activeTab === 'templates' && '建立新配方'}
-              {activeTab === 'triggers' && '配置干预规则'}
-              {activeTab === 'reports' && '生成分析报告'}
-              {activeTab === 'knowledge' && '发布知识内容'}
-            </button>
+            {activeTab !== 'templates' && (
+              <button 
+                  onClick={async () => {
+                    if (activeTab === 'dashboard') {
+                      setNewTaskMode('log');
+                      setIsNewTaskModalOpen(true);
+                    }
+                    if (activeTab === 'clients') await handleAddClient();
+                    if (activeTab === 'products') await handleAddProduct();
+                    if (activeTab === 'triggers') setIsTriggerModalOpen(true);
+                  }}
+                className="flex items-center justify-center w-9 h-9 md:w-auto md:px-6 md:py-2 bg-slate-900 text-white rounded-lg md:rounded-xl text-xs md:text-sm font-bold hover:bg-slate-800 transition-all shadow-lg shadow-slate-900/10 shrink-0"
+              >
+                <Plus className="w-4 h-4" />
+                <span className="hidden md:inline ml-2">
+                  {activeTab === 'dashboard' && '新建待办/日志'}
+                  {activeTab === 'clients' && '新增客户档案'}
+                  {activeTab === 'products' && '新增产品/成分'}
+                  {activeTab === 'triggers' && '配置干预规则'}
+                  {activeTab === 'reports' && '生成分析报告'}
+                  {activeTab === 'knowledge' && '发布知识内容'}
+                </span>
+              </button>
+            )}
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-8">
+        <main className="flex-1 overflow-y-auto p-4 md:p-8">
           {renderContent()}
         </main>
       </div>
       {/* Modal Definitions */}
       {isNewTaskModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
-          <div className="bg-white rounded-[32px] w-full max-w-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200 flex flex-col my-8 max-h-[90vh]">
-            <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
-              <div className="flex items-center gap-4">
-                <div className={`p-3 rounded-2xl ${newTaskMode === 'log' ? 'bg-blue-50 text-blue-600' : 'bg-rose-50 text-rose-600'}`}>
-                  {newTaskMode === 'log' ? <FileEdit className="w-6 h-6" /> : <Bell className="w-6 h-6" />}
+          <div className="bg-white rounded-2xl md:rounded-[32px] w-full max-w-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200 flex flex-col my-8 max-h-[90vh]">
+            <div className="px-5 py-4 md:px-8 md:py-6 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
+              <div className="flex items-center gap-3 md:gap-4">
+                <div className={`p-2.5 md:p-3 rounded-xl md:rounded-2xl ${newTaskMode === 'log' ? 'bg-blue-50 text-blue-600' : 'bg-rose-50 text-rose-600'}`}>
+                  {newTaskMode === 'log' ? <FileEdit className="w-5 h-5 md:w-6 md:h-6" /> : <Bell className="w-5 h-5 md:w-6 md:h-6" />}
                 </div>
                 <div>
-                  <h3 className="text-xl font-black text-slate-800">
+                  <h3 className="text-lg md:text-xl font-black text-slate-800">
                     {newTaskMode === 'log' ? '新建跟进日志' : '新建待办提醒'}
                   </h3>
-                  <p className="text-xs text-slate-400 font-medium mt-1">
+                  <p className="text-[10px] md:text-xs text-slate-400 font-medium mt-0.5 md:mt-1">
                     {newTaskMode === 'log' ? '记录客户沟通情况，更新标签' : '设置定时提醒，系统自动触发告警'}
                   </p>
                 </div>
@@ -2290,12 +2530,12 @@ function DashboardContent() {
               </button>
             </div>
 
-            <div className="p-8 space-y-6 flex-1 overflow-y-auto">
+            <div className="p-5 md:p-8 space-y-5 md:space-y-6 flex-1 overflow-y-auto max-h-[70vh] md:max-h-none">
               {/* 模式切换 */}
-              <div className="flex p-1 bg-slate-100 rounded-2xl">
+              <div className="flex p-1 bg-slate-100 rounded-xl md:rounded-2xl shrink-0">
                 <button
                   onClick={() => setNewTaskMode('log')}
-                  className={`flex-1 py-2.5 rounded-xl text-xs font-black transition-all ${
+                  className={`flex-1 py-2 md:py-2.5 rounded-lg md:rounded-xl text-[10px] md:text-xs font-black transition-all ${
                     newTaskMode === 'log' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'
                   }`}
                 >
@@ -2303,7 +2543,7 @@ function DashboardContent() {
                 </button>
                 <button
                   onClick={() => setNewTaskMode('todo')}
-                  className={`flex-1 py-2.5 rounded-xl text-xs font-black transition-all ${
+                  className={`flex-1 py-2 md:py-2.5 rounded-lg md:rounded-xl text-[10px] md:text-xs font-black transition-all ${
                     newTaskMode === 'todo' ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'
                   }`}
                 >
@@ -2370,13 +2610,13 @@ function DashboardContent() {
                 
                 setIsNewTaskModalOpen(false);
                 alert(newTaskMode === 'log' ? '日志已记录' : '待办已创建');
-              }} className="space-y-5">
+              }} className="space-y-4 md:space-y-5">
                 {/* 客户选择 */}
-                <div className="space-y-2">
+                <div className="space-y-1.5 md:space-y-2">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">关联客户</label>
                   <select 
                     name="clientId"
-                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-4 py-3 text-sm focus:border-slate-900 outline-none transition-all font-bold"
+                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl md:rounded-2xl px-4 py-2.5 md:py-3 text-xs md:text-sm focus:border-slate-900 outline-none transition-all font-bold"
                     required
                   >
                     <option value="">选择客户...</option>
@@ -2387,30 +2627,30 @@ function DashboardContent() {
                 </div>
 
                 {/* 内容输入 */}
-                <div className="space-y-2">
+                <div className="space-y-1.5 md:space-y-2">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">
                     {newTaskMode === 'log' ? '日志内容' : '待办内容'}
                   </label>
                   <textarea 
                     name="content"
                     placeholder={newTaskMode === 'log' ? "输入本次沟通详情..." : "输入需要提醒的事项..."}
-                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-4 py-3 text-sm focus:border-slate-900 outline-none transition-all font-bold min-h-[100px]"
+                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl md:rounded-2xl px-4 py-2.5 md:py-3 text-xs md:text-sm focus:border-slate-900 outline-none transition-all font-bold min-h-[80px] md:min-h-[100px]"
                     required
                   />
                 </div>
 
                 {newTaskMode === 'log' ? (
                   <>
-                    <div className="space-y-2">
+                    <div className="space-y-1.5 md:space-y-2">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">更新标签 (逗号分隔)</label>
                       <input 
                         name="tags"
                         type="text"
                         placeholder="例如: 意向强烈, 补货意向, 能量低"
-                        className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-4 py-3 text-sm focus:border-slate-900 outline-none transition-all font-bold"
+                        className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl md:rounded-2xl px-4 py-2.5 md:py-3 text-xs md:text-sm focus:border-slate-900 outline-none transition-all font-bold"
                       />
                     </div>
-                    <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100 space-y-4">
+                    <div className="bg-blue-50/50 p-4 rounded-xl md:rounded-2xl border border-blue-100 space-y-4">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <input 
@@ -2423,7 +2663,7 @@ function DashboardContent() {
                         </div>
                         <Zap className="w-4 h-4 text-blue-400" />
                       </div>
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div className="space-y-1.5">
                           <label className="text-[9px] font-black text-blue-400 uppercase tracking-widest ml-1">提醒日期</label>
                           <input 
@@ -2448,21 +2688,21 @@ function DashboardContent() {
                     </div>
                   </>
                 ) : (
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5 md:space-y-2">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">提醒日期</label>
                       <input 
                         name="dueDate"
                         type="date"
-                        className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-4 py-3 text-sm focus:border-slate-900 outline-none transition-all font-bold"
+                        className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl md:rounded-2xl px-4 py-2.5 md:py-3 text-xs md:text-sm focus:border-slate-900 outline-none transition-all font-bold"
                         required
                       />
                     </div>
-                    <div className="space-y-2">
+                    <div className="space-y-1.5 md:space-y-2">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">优先级</label>
                       <select 
                         name="priority"
-                        className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-4 py-3 text-sm focus:border-slate-900 outline-none transition-all font-bold"
+                        className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl md:rounded-2xl px-4 py-2.5 md:py-3 text-xs md:text-sm focus:border-slate-900 outline-none transition-all font-bold"
                       >
                         <option value="medium">中 (Medium)</option>
                         <option value="high">高 (High)</option>
@@ -2475,17 +2715,17 @@ function DashboardContent() {
               </form>
             </div>
 
-            <div className="px-8 py-6 border-t border-slate-100 bg-slate-50 flex items-center justify-end gap-3 shrink-0">
+            <div className="px-5 py-4 md:px-8 md:py-6 border-t border-slate-100 bg-slate-50 flex items-center justify-end gap-3 shrink-0">
               <button 
                 onClick={() => setIsNewTaskModalOpen(false)}
-                className="px-6 py-3 text-sm font-bold text-slate-500 hover:text-slate-700 transition-all"
+                className="px-4 py-2 md:px-6 md:py-3 text-xs md:text-sm font-bold text-slate-500 hover:text-slate-700 transition-all"
               >
                 取消
               </button>
               <button 
                 type="submit"
                 form="newTaskForm"
-                className={`px-8 py-3 rounded-2xl font-black text-sm shadow-xl transition-all ${
+                className={`px-6 py-2.5 md:px-8 md:py-3 rounded-xl md:rounded-2xl font-black text-xs md:text-sm shadow-xl transition-all ${
                   newTaskMode === 'log' 
                     ? 'bg-blue-600 text-white shadow-blue-600/20 hover:bg-blue-700' 
                     : 'bg-rose-600 text-white shadow-rose-600/20 hover:bg-rose-700'
@@ -2501,63 +2741,64 @@ function DashboardContent() {
       {/* Modal Definitions */}
       {isImportModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
-          <div className="bg-white rounded-[32px] w-full max-w-4xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh]">
-            <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-emerald-50 rounded-2xl text-emerald-600">
-                  <Database className="w-6 h-6" />
+          <div className="bg-white rounded-2xl md:rounded-[32px] w-full max-w-4xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh]">
+            <div className="px-5 py-4 md:px-8 md:py-6 border-b border-slate-100 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3 md:gap-4">
+                <div className="p-2 md:p-3 bg-emerald-50 rounded-xl md:rounded-2xl text-emerald-600">
+                  <Database className="w-5 h-5 md:w-6 md:h-6" />
                 </div>
                 <div>
-                  <h3 className="text-xl font-black text-slate-800">
+                  <h3 className="text-lg md:text-xl font-black text-slate-800">
                     {importType === 'clients' ? '客户档案批量导入' : '产品库批量导入'}
                   </h3>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                  <div className="flex items-center gap-1.5 md:gap-2 mt-0.5 md:mt-1">
+                    <span className={`text-[8px] md:text-[10px] font-bold px-1.5 md:px-2 py-0.5 rounded-full ${
                       importStep === 'upload' ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-400'
-                    }`}>1. 上传文件</span>
-                    <ChevronRight className="w-3 h-3 text-slate-300" />
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                    }`}>1. 上传</span>
+                    <ChevronRight className="w-2.5 h-2.5 md:w-3 md:h-3 text-slate-300" />
+                    <span className={`text-[8px] md:text-[10px] font-bold px-1.5 md:px-2 py-0.5 rounded-full ${
                       importStep === 'preview' ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-400'
-                    }`}>2. 预览对齐</span>
-                    <ChevronRight className="w-3 h-3 text-slate-300" />
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                    }`}>2. 预览</span>
+                    <ChevronRight className="w-2.5 h-2.5 md:w-3 md:h-3 text-slate-300" />
+                    <span className={`text-[8px] md:text-[10px] font-bold px-1.5 md:px-2 py-0.5 rounded-full ${
                       importStep === 'history' ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-400'
-                    }`}>3. 导入历史/撤回</span>
+                    }`}>3. 历史</span>
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 md:gap-2">
                 <button 
                   onClick={() => setImportStep('history')}
-                  className="px-4 py-2 text-xs font-bold text-slate-500 hover:bg-slate-50 rounded-xl transition-all"
+                  className="px-2 md:px-4 py-1.5 md:py-2 text-[10px] md:text-xs font-bold text-slate-500 hover:bg-slate-50 rounded-lg md:rounded-xl transition-all"
                 >
-                  查看历史记录
+                  <span className="hidden md:inline">查看历史记录</span>
+                  <span className="md:hidden">历史</span>
                 </button>
-                <button onClick={() => setIsImportModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
-                  <X className="w-5 h-5 text-slate-400" />
+                <button onClick={() => setIsImportModalOpen(false)} className="p-1.5 md:p-2 hover:bg-slate-100 rounded-full transition-colors">
+                  <X className="w-4 h-4 md:w-5 md:h-5 text-slate-400" />
                 </button>
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-8">
+            <div className="flex-1 overflow-y-auto p-5 md:p-8">
               {importStep === 'upload' && (
-                <div className="space-y-8">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div className="space-y-4">
-                      <h4 className="text-sm font-bold text-slate-700">步骤 1：下载标准模板</h4>
-                      <p className="text-xs text-slate-500 leading-relaxed">
+                <div className="space-y-6 md:space-y-8">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
+                    <div className="space-y-3 md:space-y-4">
+                      <h4 className="text-xs md:text-sm font-bold text-slate-700">步骤 1：下载标准模板</h4>
+                      <p className="text-[10px] md:text-xs text-slate-500 leading-relaxed">
                         请务必使用系统提供的标准 Excel 模板，不要修改表头结构，否则可能导致数据对齐失败。
                       </p>
                       <button 
                         onClick={handleDownloadTemplate}
-                        className="flex items-center gap-2 px-6 py-4 bg-slate-100 text-slate-700 rounded-2xl text-sm font-bold hover:bg-slate-200 transition-all w-full justify-center"
+                        className="flex items-center gap-2 px-4 md:px-6 py-3 md:py-4 bg-slate-100 text-slate-700 rounded-xl md:rounded-2xl text-xs md:text-sm font-bold hover:bg-slate-200 transition-all w-full justify-center"
                       >
-                        <Package className="w-5 h-5" />
+                        <Package className="w-4 h-4 md:w-5 md:h-5" />
                         下载 {importType === 'clients' ? '客户档案' : '产品库'} 模板
                       </button>
                     </div>
-                    <div className="space-y-4">
-                      <h4 className="text-sm font-bold text-slate-700">步骤 2：上传填好的 Excel</h4>
+                    <div className="space-y-3 md:space-y-4">
+                      <h4 className="text-xs md:text-sm font-bold text-slate-700">步骤 2：上传填好的 Excel</h4>
                       <div className="relative group">
                         <input 
                           type="file" 
@@ -2565,24 +2806,24 @@ function DashboardContent() {
                           onChange={handleFileUpload}
                           className="absolute inset-0 opacity-0 cursor-pointer z-10"
                         />
-                        <div className="border-2 border-dashed border-slate-200 rounded-2xl p-8 flex flex-col items-center justify-center gap-3 group-hover:border-emerald-300 group-hover:bg-emerald-50/30 transition-all">
-                          <div className="w-12 h-12 bg-slate-50 rounded-xl flex items-center justify-center group-hover:bg-emerald-100">
-                            <Plus className="w-6 h-6 text-slate-300 group-hover:text-emerald-500" />
+                        <div className="border-2 border-dashed border-slate-200 rounded-xl md:rounded-2xl p-6 md:p-8 flex flex-col items-center justify-center gap-2 md:gap-3 group-hover:border-emerald-300 group-hover:bg-emerald-50/30 transition-all">
+                          <div className="w-10 h-10 md:w-12 md:h-12 bg-slate-50 rounded-lg md:rounded-xl flex items-center justify-center group-hover:bg-emerald-100">
+                            <Plus className="w-5 h-5 md:w-6 md:h-6 text-slate-300 group-hover:text-emerald-500" />
                           </div>
                           <div className="text-center">
-                            <div className="text-sm font-bold text-slate-400 group-hover:text-emerald-600">点击或拖拽上传文件</div>
-                            <p className="text-[10px] text-slate-400 mt-1">支持 .xlsx, .xls, .csv 格式</p>
+                            <div className="text-xs md:text-sm font-bold text-slate-400 group-hover:text-emerald-600">点击或拖拽上传文件</div>
+                            <p className="text-[9px] md:text-[10px] text-slate-400 mt-1">支持 .xlsx, .xls, .csv 格式</p>
                           </div>
                         </div>
                       </div>
                     </div>
                   </div>
 
-                  <div className="bg-amber-50 rounded-2xl p-6 border border-amber-100">
-                    <div className="flex items-center gap-2 text-amber-700 font-bold text-sm mb-2">
-                      <Zap className="w-4 h-4" /> 导入注意事项
+                  <div className="bg-amber-50 rounded-xl md:rounded-2xl p-4 md:p-6 border border-amber-100">
+                    <div className="flex items-center gap-2 text-amber-700 font-bold text-xs md:text-sm mb-2">
+                      <Zap className="w-3.5 h-3.5 md:w-4 md:h-4" /> 导入注意事项
                     </div>
-                    <ul className="text-xs text-amber-600 space-y-2 list-disc pl-4 font-medium">
+                    <ul className="text-[10px] md:text-xs text-amber-600 space-y-1.5 md:space-y-2 list-disc pl-4 font-medium">
                       {importType === 'clients' ? (
                         <>
                           <li>手机号是客户的唯一标识，重复手机号将无法导入。</li>
@@ -2602,45 +2843,45 @@ function DashboardContent() {
               )}
 
               {importStep === 'preview' && (
-                <div className="space-y-6">
+                <div className="space-y-5 md:space-y-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h4 className="text-sm font-bold text-slate-700">数据对齐预览</h4>
-                      <p className="text-xs text-slate-500 mt-1">
+                      <h4 className="text-xs md:text-sm font-bold text-slate-700">数据对齐预览</h4>
+                      <p className="text-[10px] md:text-xs text-slate-500 mt-1">
                         共解析出 <span className="font-bold text-slate-900">{previewData.length}</span> 条记录，
                         其中 <span className="font-bold text-rose-500">{importErrors.length}</span> 条存在格式问题。
                       </p>
                     </div>
                     <button 
                       onClick={() => setImportStep('upload')}
-                      className="text-xs font-bold text-emerald-600 hover:underline"
+                      className="text-[10px] md:text-xs font-bold text-emerald-600 hover:underline"
                     >
-                      重新上传文件
+                      重新上传
                     </button>
                   </div>
 
-                  <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-                    <div className="overflow-x-auto max-h-[400px]">
-                      <table className="w-full text-left text-xs">
+                  <div className="border border-slate-200 rounded-xl md:rounded-2xl overflow-hidden shadow-sm">
+                    <div className="overflow-x-auto max-h-[300px] md:max-h-[400px]">
+                      <table className="w-full text-left text-[10px] md:text-xs">
                         <thead className="sticky top-0 bg-slate-50 z-10 border-b border-slate-200">
                           <tr>
-                            <th className="px-4 py-3 font-black text-slate-400 uppercase tracking-widest">行号</th>
+                            <th className="px-3 py-2 md:px-4 md:py-3 font-black text-slate-400 uppercase tracking-widest">行号</th>
                             {importType === 'clients' ? (
                               <>
-                                <th className="px-4 py-3 font-black text-slate-400 uppercase tracking-widest">姓名</th>
-                                <th className="px-4 py-3 font-black text-slate-400 uppercase tracking-widest">手机号</th>
-                                <th className="px-4 py-3 font-black text-slate-400 uppercase tracking-widest">性别</th>
-                                <th className="px-4 py-3 font-black text-slate-400 uppercase tracking-widest">生日</th>
+                                <th className="px-3 py-2 md:px-4 md:py-3 font-black text-slate-400 uppercase tracking-widest">姓名</th>
+                                <th className="px-3 py-2 md:px-4 md:py-3 font-black text-slate-400 uppercase tracking-widest">手机号</th>
+                                <th className="px-3 py-2 md:px-4 md:py-3 font-black text-slate-400 uppercase tracking-widest">性别</th>
+                                <th className="px-3 py-2 md:px-4 md:py-3 font-black text-slate-400 uppercase tracking-widest hidden md:table-cell">生日</th>
                               </>
                             ) : (
                               <>
-                                <th className="px-4 py-3 font-black text-slate-400 uppercase tracking-widest">产品名称</th>
-                                <th className="px-4 py-3 font-black text-slate-400 uppercase tracking-widest">品牌</th>
-                                <th className="px-4 py-3 font-black text-slate-400 uppercase tracking-widest">企业名称</th>
-                                <th className="px-4 py-3 font-black text-slate-400 uppercase tracking-widest">规格数量</th>
+                                <th className="px-3 py-2 md:px-4 md:py-3 font-black text-slate-400 uppercase tracking-widest">产品名称</th>
+                                <th className="px-3 py-2 md:px-4 md:py-3 font-black text-slate-400 uppercase tracking-widest">品牌</th>
+                                <th className="px-3 py-2 md:px-4 md:py-3 font-black text-slate-400 uppercase tracking-widest hidden md:table-cell">企业名称</th>
+                                <th className="px-3 py-2 md:px-4 md:py-3 font-black text-slate-400 uppercase tracking-widest">规格</th>
                               </>
                             )}
-                            <th className="px-4 py-3 font-black text-slate-400 uppercase tracking-widest">校验状态</th>
+                            <th className="px-3 py-2 md:px-4 md:py-3 font-black text-slate-400 uppercase tracking-widest">校验</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -2650,40 +2891,40 @@ function DashboardContent() {
                             
                             return (
                               <tr key={idx} className={isError ? 'bg-rose-50/50' : 'hover:bg-slate-50 transition-colors'}>
-                                <td className="px-4 py-3 text-slate-400 font-bold">{idx + 1}</td>
+                                <td className="px-3 py-2 md:px-4 md:py-3 text-slate-400 font-bold">{idx + 1}</td>
                                 {importType === 'clients' ? (
                                   <>
-                                    <td className="px-4 py-3 font-bold text-slate-700">{row.name}</td>
-                                    <td className={`px-4 py-3 font-bold ${rowErrors.some(e => e.field === 'phone') ? 'text-rose-600' : 'text-slate-700'}`}>
+                                    <td className="px-3 py-2 md:px-4 md:py-3 font-bold text-slate-700">{row.name}</td>
+                                    <td className={`px-3 py-2 md:px-4 md:py-3 font-bold ${rowErrors.some(e => e.field === 'phone') ? 'text-rose-600' : 'text-slate-700'}`}>
                                       {row.phone}
                                     </td>
-                                    <td className="px-4 py-3 text-slate-500">{row.gender === 'male' ? '男' : '女'}</td>
-                                    <td className={`px-4 py-3 ${rowErrors.some(e => e.field === 'birthday') ? 'text-rose-600 font-bold' : 'text-slate-500'}`}>
+                                    <td className="px-3 py-2 md:px-4 md:py-3 text-slate-500">{row.gender === 'male' ? '男' : '女'}</td>
+                                    <td className={`px-3 py-2 md:px-4 md:py-3 hidden md:table-cell ${rowErrors.some(e => e.field === 'birthday') ? 'text-rose-600 font-bold' : 'text-slate-500'}`}>
                                       {row.birthday}
                                     </td>
                                   </>
                                 ) : (
                                   <>
-                                    <td className="px-4 py-3 font-bold text-slate-700">{row.name}</td>
-                                    <td className="px-4 py-3 text-slate-700">{row.brand}</td>
-                                    <td className="px-4 py-3 text-slate-500">{row.enterprise_name}</td>
-                                    <td className={`px-4 py-3 font-bold ${rowErrors.some(e => e.field === 'spec_quantity') ? 'text-rose-600' : 'text-slate-700'}`}>
+                                    <td className="px-3 py-2 md:px-4 md:py-3 font-bold text-slate-700">{row.name}</td>
+                                    <td className="px-3 py-2 md:px-4 md:py-3 text-slate-700">{row.brand}</td>
+                                    <td className="px-3 py-2 md:px-4 md:py-3 text-slate-500 hidden md:table-cell">{row.enterprise_name}</td>
+                                    <td className={`px-3 py-2 md:px-4 md:py-3 font-bold ${rowErrors.some(e => e.field === 'spec_quantity') ? 'text-rose-600' : 'text-slate-700'}`}>
                                       {row.spec_quantity}
                                     </td>
                                   </>
                                 )}
-                                <td className="px-4 py-3">
+                                <td className="px-3 py-2 md:px-4 md:py-3">
                                   {isError ? (
-                                    <div className="flex flex-col gap-1">
+                                    <div className="flex flex-col gap-0.5">
                                       {rowErrors.map((err, i) => (
-                                        <span key={i} className="text-[10px] text-rose-500 font-bold flex items-center gap-1">
+                                        <span key={i} className="text-[8px] md:text-[10px] text-rose-500 font-bold flex items-center gap-0.5">
                                           <X className="w-2 h-2" /> {err.msg}
                                         </span>
                                       ))}
                                     </div>
                                   ) : (
-                                    <span className="text-[10px] text-emerald-500 font-bold flex items-center gap-1">
-                                      <ShieldCheck className="w-3 h-3" /> 校验通过
+                                    <span className="text-[8px] md:text-[10px] text-emerald-500 font-bold flex items-center gap-0.5">
+                                      <ShieldCheck className="w-2.5 h-2.5 md:w-3 md:h-3" /> <span className="hidden md:inline">校验通过</span>
                                     </span>
                                   )}
                                 </td>
@@ -2698,40 +2939,40 @@ function DashboardContent() {
               )}
 
               {importStep === 'history' && (
-                <div className="space-y-6">
+                <div className="space-y-5 md:space-y-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h4 className="text-sm font-bold text-slate-700">导入批次历史</h4>
-                      <p className="text-xs text-slate-500 mt-1">记录所有批量操作，支持一键撤回错误导入的数据。</p>
+                      <h4 className="text-xs md:text-sm font-bold text-slate-700">导入批次历史</h4>
+                      <p className="text-[10px] md:text-xs text-slate-500 mt-1">记录所有批量操作，支持一键撤回错误导入的数据。</p>
                     </div>
                   </div>
 
-                  <div className="space-y-4">
+                  <div className="space-y-3 md:space-y-4">
                     {importBatches.length === 0 ? (
-                      <div className="py-12 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-                        <Database className="w-10 h-10 text-slate-200 mx-auto mb-3" />
-                        <p className="text-sm text-slate-400 font-medium">暂无导入记录</p>
+                      <div className="py-8 md:py-12 text-center bg-slate-50 rounded-xl md:rounded-2xl border border-dashed border-slate-200">
+                        <Database className="w-8 h-8 md:w-10 md:h-10 text-slate-200 mx-auto mb-2 md:mb-3" />
+                        <p className="text-xs md:text-sm text-slate-400 font-medium">暂无导入记录</p>
                       </div>
                     ) : (
                       importBatches.map((batch: ImportBatch) => (
-                        <div key={batch.id} className="bg-white border border-slate-200 rounded-2xl p-5 flex items-center justify-between hover:shadow-md transition-all">
-                          <div className="flex items-center gap-4">
-                            <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                        <div key={batch.id} className="bg-white border border-slate-200 rounded-xl md:rounded-2xl p-4 md:p-5 flex items-center justify-between hover:shadow-md transition-all">
+                          <div className="flex items-center gap-3 md:gap-4">
+                            <div className={`w-10 h-10 md:w-12 md:h-12 rounded-lg md:rounded-xl flex items-center justify-center ${
                               batch.type === 'clients' ? 'bg-blue-50 text-blue-600' : 'bg-orange-50 text-orange-600'
                             }`}>
-                              {batch.type === 'clients' ? <Users className="w-6 h-6" /> : <Package className="w-6 h-6" />}
+                              {batch.type === 'clients' ? <Users className="w-5 h-5 md:w-6 md:h-6" /> : <Package className="w-5 h-5 md:w-6 md:h-6" />}
                             </div>
                             <div>
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm font-bold text-slate-800">
-                                  {batch.type === 'clients' ? '客户档案' : '产品库'} 批量导入
+                              <div className="flex items-center gap-1.5 md:gap-2">
+                                <span className="text-xs md:text-sm font-bold text-slate-800">
+                                  {batch.type === 'clients' ? '客户' : '产品'} 导入
                                 </span>
-                                <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-bold">
-                                  {batch.count} 条记录
+                                <span className="text-[8px] md:text-[10px] bg-slate-100 text-slate-500 px-1.5 md:px-2 py-0.5 rounded-full font-bold">
+                                  {batch.count} 条
                                 </span>
                               </div>
-                              <div className="text-xs text-slate-400 mt-1 font-medium">
-                                导入时间：{new Date(batch.timestamp).toLocaleString()}
+                              <div className="text-[10px] md:text-xs text-slate-400 mt-0.5 md:mt-1 font-medium">
+                                {new Date(batch.timestamp).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
                               </div>
                             </div>
                           </div>
@@ -2742,10 +2983,11 @@ function DashboardContent() {
                                 alert('批次已撤回');
                               }
                             }}
-                            className="flex items-center gap-2 px-4 py-2 text-rose-600 hover:bg-rose-50 rounded-xl text-xs font-bold transition-all border border-transparent hover:border-rose-100"
+                            className="flex items-center gap-1 md:gap-2 px-3 md:px-4 py-1.5 md:py-2 text-rose-600 hover:bg-rose-50 rounded-lg md:rounded-xl text-[10px] md:text-xs font-bold transition-all border border-transparent hover:border-rose-100"
                           >
-                            <TrendingDown className="w-4 h-4" />
-                            一键撤回
+                            <TrendingDown className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                            <span className="hidden md:inline">一键撤回</span>
+                            <span className="md:hidden">撤回</span>
                           </button>
                         </div>
                       ))
@@ -2755,14 +2997,14 @@ function DashboardContent() {
               )}
             </div>
 
-            <div className="px-8 py-6 border-t border-slate-100 bg-slate-50 flex items-center justify-between shrink-0">
-              <div className="text-xs text-slate-400 font-medium">
-                {importStep === 'preview' && `预览数据中包含 ${importErrors.length} 个错误`}
+            <div className="px-5 py-4 md:px-8 md:py-6 border-t border-slate-100 bg-slate-50 flex items-center justify-between shrink-0">
+              <div className="text-[10px] md:text-xs text-slate-400 font-medium">
+                {importStep === 'preview' && `包含 ${importErrors.length} 个错误`}
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 md:gap-3">
                 <button 
                   onClick={() => setIsImportModalOpen(false)}
-                  className="px-6 py-3 text-sm font-bold text-slate-500 hover:text-slate-700 transition-all"
+                  className="px-3 md:px-6 py-2 md:py-3 text-xs md:text-sm font-bold text-slate-500 hover:text-slate-700 transition-all"
                 >
                   取消
                 </button>
@@ -2770,19 +3012,19 @@ function DashboardContent() {
                   <button 
                     onClick={handleConfirmImport}
                     disabled={importErrors.length > 0}
-                    className={`px-8 py-3 rounded-2xl font-black text-sm shadow-xl transition-all ${
+                    className={`px-4 md:px-8 py-2 md:py-3 rounded-xl md:rounded-2xl font-black text-xs md:text-sm shadow-xl transition-all ${
                       importErrors.length > 0 
                         ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none' 
                         : 'bg-emerald-600 text-white shadow-emerald-600/20 hover:bg-emerald-700'
                     }`}
                   >
-                    确认入库 (Save to Cloud)
+                    确认入库
                   </button>
                 )}
                 {importStep === 'history' && (
                   <button 
                     onClick={() => setImportStep('upload')}
-                    className="px-8 py-3 bg-slate-900 text-white rounded-2xl font-black text-sm shadow-xl shadow-slate-900/10 hover:bg-slate-800 transition-all"
+                    className="px-4 md:px-8 py-2 md:py-3 bg-slate-900 text-white rounded-xl md:rounded-2xl font-black text-xs md:text-sm shadow-xl shadow-slate-900/10 hover:bg-slate-800 transition-all"
                   >
                     开始新导入
                   </button>
@@ -2795,52 +3037,52 @@ function DashboardContent() {
 
       {isClientModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-[32px] w-full max-w-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200 overflow-y-auto max-h-[90vh]">
-            <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
-              <h3 className="text-xl font-black text-slate-800">{editingClient ? '编辑客户档案' : '录入新客户'}</h3>
-              <button onClick={() => setIsClientModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X className="w-5 h-5 text-slate-400" /></button>
+          <div className="bg-white rounded-2xl md:rounded-[32px] w-full max-w-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200 overflow-y-auto max-h-[90vh]">
+            <div className="px-5 py-4 md:px-8 md:py-6 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
+              <h3 className="text-lg md:text-xl font-black text-slate-800">{editingClient ? '编辑客户档案' : '录入新客户'}</h3>
+              <button onClick={() => setIsClientModalOpen(false)} className="p-1.5 md:p-2 hover:bg-slate-100 rounded-full transition-colors"><X className="w-5 h-5 text-slate-400" /></button>
             </div>
-            <form onSubmit={handleSaveClient} className="p-8 space-y-6">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">客户姓名</label>
-                <input name="name" type="text" placeholder="请输入姓名" defaultValue={editingClient?.name} className="w-full bg-slate-50 border-none rounded-2xl py-4 px-6 text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none" required />
+            <form onSubmit={handleSaveClient} className="p-5 md:p-8 space-y-4 md:space-y-6">
+              <div className="space-y-1.5 md:space-y-2">
+                <label className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">客户姓名</label>
+                <input name="name" type="text" placeholder="请输入姓名" defaultValue={editingClient?.name} className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl py-3 px-4 md:py-4 md:px-6 text-xs md:text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none" required />
               </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">联系电话</label>
-                <input name="phone" type="text" placeholder="请输入手机号" defaultValue={editingClient?.phone} className="w-full bg-slate-50 border-none rounded-2xl py-4 px-6 text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none" required />
+              <div className="space-y-1.5 md:space-y-2">
+                <label className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">联系电话</label>
+                <input name="phone" type="text" placeholder="请输入手机号" defaultValue={editingClient?.phone} className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl py-3 px-4 md:py-4 md:px-6 text-xs md:text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none" required />
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">性别</label>
-                    <select name="gender" defaultValue={editingClient?.gender || 'female'} className="w-full bg-slate-50 border-none rounded-2xl py-4 px-6 text-sm focus:ring-2 focus:ring-emerald-500 outline-none appearance-none">
+              <div className="grid grid-cols-2 gap-3 md:gap-4">
+                  <div className="space-y-1.5 md:space-y-2">
+                    <label className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">性别</label>
+                    <select name="gender" defaultValue={editingClient?.gender || 'female'} className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl py-3 px-4 md:py-4 md:px-6 text-xs md:text-sm focus:ring-2 focus:ring-emerald-500 outline-none appearance-none">
                       <option value="female">女</option>
                       <option value="male">男</option>
                       <option value="other">其他</option>
                     </select>
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">出生日期</label>
-                    <input name="birthday" type="date" defaultValue={editingClient?.birthday} className="w-full bg-slate-50 border-none rounded-2xl py-4 px-6 text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none" />
+                  <div className="space-y-1.5 md:space-y-2">
+                    <label className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">出生日期</label>
+                    <input name="birthday" type="date" defaultValue={editingClient?.birthday} className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl py-3 px-4 md:py-4 md:px-6 text-xs md:text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none" />
                   </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">身高 (cm)</label>
-                    <input name="height_cm" type="number" placeholder="cm" defaultValue={editingClient?.height_cm} className="w-full bg-slate-50 border-none rounded-2xl py-4 px-6 text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none" />
+              <div className="grid grid-cols-2 gap-3 md:gap-4">
+                  <div className="space-y-1.5 md:space-y-2">
+                    <label className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">身高 (cm)</label>
+                    <input name="height_cm" type="number" placeholder="cm" defaultValue={editingClient?.height_cm} className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl py-3 px-4 md:py-4 md:px-6 text-xs md:text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none" />
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">体重 (kg)</label>
-                    <input name="weight_kg" type="number" placeholder="kg" defaultValue={editingClient?.weight_kg} className="w-full bg-slate-50 border-none rounded-2xl py-4 px-6 text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none" />
+                  <div className="space-y-1.5 md:space-y-2">
+                    <label className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">体重 (kg)</label>
+                    <input name="weight_kg" type="number" placeholder="kg" defaultValue={editingClient?.weight_kg} className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl py-3 px-4 md:py-4 md:px-6 text-xs md:text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none" />
                   </div>
               </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">调理目标 (营养师关注)</label>
-                <input name="health_goal" type="text" placeholder="如: 改善睡眠, 降低尿酸, 减脂10kg" defaultValue={editingClient?.health_goal} className="w-full bg-slate-50 border-none rounded-2xl py-4 px-6 text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none" />
+              <div className="space-y-1.5 md:space-y-2">
+                <label className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">调理目标</label>
+                <input name="health_goal" type="text" placeholder="如: 改善睡眠, 降低尿酸, 减脂10kg" defaultValue={editingClient?.health_goal} className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl py-3 px-4 md:py-4 md:px-6 text-xs md:text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none" />
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">获客来源 (销售关注)</label>
-                  <select name="source" defaultValue={editingClient?.source || 'direct'} className="w-full bg-slate-50 border-none rounded-2xl py-4 px-6 text-sm focus:ring-2 focus:ring-emerald-500 outline-none appearance-none">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
+                <div className="space-y-1.5 md:space-y-2">
+                  <label className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">获客来源</label>
+                  <select name="source" defaultValue={editingClient?.source || 'direct'} className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl py-3 px-4 md:py-4 md:px-6 text-xs md:text-sm focus:ring-2 focus:ring-emerald-500 outline-none appearance-none">
                     <option value="direct">自然到访</option>
                     <option value="wechat_moments">微信朋友圈</option>
                     <option value="referral">客户推荐</option>
@@ -2848,16 +3090,16 @@ function DashboardContent() {
                     <option value="other">其他</option>
                   </select>
                 </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 text-rose-500">成交意向 (准成交标注)</label>
-                  <select name="conversion_intent" defaultValue={editingClient?.conversion_intent || 'low'} className="w-full bg-rose-50/50 border-none rounded-2xl py-4 px-6 text-sm focus:ring-2 focus:ring-rose-500 outline-none appearance-none font-bold text-rose-700">
+                <div className="space-y-1.5 md:space-y-2">
+                  <label className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 text-rose-500">成交意向</label>
+                  <select name="conversion_intent" defaultValue={editingClient?.conversion_intent || 'low'} className="w-full bg-rose-50/50 border-none rounded-xl md:rounded-2xl py-3 px-4 md:py-4 md:px-6 text-xs md:text-sm focus:ring-2 focus:ring-rose-500 outline-none appearance-none font-bold text-rose-700">
                     <option value="low">低 (常规维护)</option>
                     <option value="medium">中 (意向跟进)</option>
                     <option value="high">高 (准成交/立即跟进)</option>
                   </select>
                 </div>
               </div>
-              <button type="submit" className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black shadow-xl shadow-emerald-600/20 hover:bg-emerald-700 transition-all mt-4">
+              <button type="submit" className="w-full py-3 md:py-4 bg-emerald-600 text-white rounded-xl md:rounded-2xl font-black text-sm md:text-base shadow-xl shadow-emerald-600/20 hover:bg-emerald-700 transition-all mt-2 md:mt-4">
                 {editingClient ? '保存修改' : '确认录入'}
               </button>
             </form>
@@ -2867,61 +3109,61 @@ function DashboardContent() {
 
       {isProductModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-[32px] w-full max-w-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200 overflow-y-auto max-h-[90vh]">
-            <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
-              <h3 className="text-xl font-black text-slate-800">{editingProduct ? '编辑产品详情' : '录入新产品/成分'}</h3>
-              <button onClick={() => setIsProductModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X className="w-5 h-5 text-slate-400" /></button>
+          <div className="bg-white rounded-2xl md:rounded-[32px] w-full max-w-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200 overflow-y-auto max-h-[90vh]">
+            <div className="px-5 py-4 md:px-8 md:py-6 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
+              <h3 className="text-lg md:text-xl font-black text-slate-800">{editingProduct ? '编辑产品详情' : '录入新产品/成分'}</h3>
+              <button onClick={() => setIsProductModalOpen(false)} className="p-1.5 md:p-2 hover:bg-slate-100 rounded-full transition-colors"><X className="w-5 h-5 text-slate-400" /></button>
             </div>
-            <form onSubmit={handleSaveProduct} className="p-8 space-y-6">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">产品名称</label>
-                <input name="name" type="text" placeholder="请输入产品全称" defaultValue={editingProduct?.name} className="w-full bg-slate-50 border-none rounded-2xl py-4 px-6 text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none" required />
+            <form onSubmit={handleSaveProduct} className="p-5 md:p-8 space-y-4 md:space-y-6">
+              <div className="space-y-1.5 md:space-y-2">
+                <label className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">产品名称</label>
+                <input name="name" type="text" placeholder="请输入产品全称" defaultValue={editingProduct?.name} className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl py-3 px-4 md:py-4 md:px-6 text-xs md:text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none" required />
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">品牌</label>
-                  <input name="brand" type="text" placeholder="品牌名称" defaultValue={editingProduct?.brand} className="w-full bg-slate-50 border-none rounded-2xl py-4 px-6 text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none" />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
+                <div className="space-y-1.5 md:space-y-2">
+                  <label className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">品牌</label>
+                  <input name="brand" type="text" placeholder="品牌名称" defaultValue={editingProduct?.brand} className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl py-3 px-4 md:py-4 md:px-6 text-xs md:text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none" />
                 </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">企业名称</label>
-                  <input name="enterprise_name" type="text" placeholder="企业/厂商名称" defaultValue={editingProduct?.enterprise_name} className="w-full bg-slate-50 border-none rounded-2xl py-4 px-6 text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">单次剂量单位</label>
-                  <input name="dosage_unit" type="text" placeholder="如: 粒/袋/ml" defaultValue={editingProduct?.dosage_unit} className="w-full bg-slate-50 border-none rounded-2xl py-4 px-6 text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none" />
+                <div className="space-y-1.5 md:space-y-2">
+                  <label className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">企业名称</label>
+                  <input name="enterprise_name" type="text" placeholder="企业/厂商名称" defaultValue={editingProduct?.enterprise_name} className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl py-3 px-4 md:py-4 md:px-6 text-xs md:text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none" />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">规格数量</label>
-                  <input name="spec_quantity" type="number" placeholder="如: 60" defaultValue={editingProduct?.spec_quantity} className="w-full bg-slate-50 border-none rounded-2xl py-4 px-6 text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none" />
+              <div className="grid grid-cols-2 gap-3 md:gap-4">
+                <div className="space-y-1.5 md:space-y-2">
+                  <label className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">单次剂量单位</label>
+                  <input name="dosage_unit" type="text" placeholder="如: 粒/袋/ml" defaultValue={editingProduct?.dosage_unit} className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl py-3 px-4 md:py-4 md:px-6 text-xs md:text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none" />
                 </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">规格单位</label>
-                  <input name="spec_unit" type="text" placeholder="如: 瓶/盒" defaultValue={editingProduct?.spec_unit} className="w-full bg-slate-50 border-none rounded-2xl py-4 px-6 text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none" />
+                <div className="space-y-1.5 md:space-y-2">
+                  <label className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">规格数量</label>
+                  <input name="spec_quantity" type="number" placeholder="如: 60" defaultValue={editingProduct?.spec_quantity} className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl py-3 px-4 md:py-4 md:px-6 text-xs md:text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none" />
                 </div>
               </div>
-                <div className="space-y-4">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">核心成分 (搜索添加)</label>
+              <div className="grid grid-cols-2 gap-3 md:gap-4">
+                <div className="space-y-1.5 md:space-y-2">
+                  <label className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">规格单位</label>
+                  <input name="spec_unit" type="text" placeholder="如: 瓶/盒" defaultValue={editingProduct?.spec_unit} className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl py-3 px-4 md:py-4 md:px-6 text-xs md:text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none" />
+                </div>
+              </div>
+                <div className="space-y-3 md:space-y-4">
+                  <label className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">核心成分 (搜索添加)</label>
                   
                   {/* 已选成分列表 */}
-                  <div className="flex flex-wrap gap-2 mb-3">
+                  <div className="flex flex-wrap gap-1.5 md:gap-2 mb-2 md:mb-3">
                     {selectedIngredients.map((ing, idx) => {
                       const ingDetail = ingredients.find(i => i.id === ing.ingredient_id);
                       return (
-                        <div key={idx} className="bg-emerald-50 border border-emerald-100 rounded-xl px-3 py-2 flex items-center gap-2 group">
+                        <div key={idx} className="bg-emerald-50 border border-emerald-100 rounded-lg md:rounded-xl px-2 md:px-3 py-1.5 md:py-2 flex items-center gap-1.5 md:gap-2 group">
                           <div className="flex flex-col">
-                            <span className="text-xs font-bold text-emerald-700">{ingDetail?.name || ing.ingredient_id}</span>
-                            <span className="text-[10px] text-emerald-600/70">{ing.amount_per_unit} {ing.unit}</span>
+                            <span className="text-[10px] md:text-xs font-bold text-emerald-700">{ingDetail?.name || ing.ingredient_id}</span>
+                            <span className="text-[8px] md:text-[10px] text-emerald-600/70">{ing.amount_per_unit} {ing.unit}</span>
                           </div>
                           <button 
                             type="button"
                             onClick={() => setSelectedIngredients(prev => prev.filter((_, i) => i !== idx))}
                             className="p-1 hover:bg-emerald-100 rounded-lg text-emerald-400 group-hover:text-emerald-600 transition-colors"
                           >
-                            <X className="w-3 h-3" />
+                            <X className="w-2.5 h-2.5 md:w-3 md:h-3" />
                           </button>
                         </div>
                       );
@@ -2930,20 +3172,20 @@ function DashboardContent() {
 
                   {/* 搜索输入框 */}
                   <div className="relative">
-                    <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
-                      <Search className="w-4 h-4 text-slate-400" />
+                    <div className="absolute inset-y-0 left-3 md:left-4 flex items-center pointer-events-none">
+                      <Search className="w-3.5 h-3.5 md:w-4 md:h-4 text-slate-400" />
                     </div>
                     <input 
                       type="text" 
                       placeholder="搜索成分名称 (如: 鱼油, Q10...)"
                       value={ingredientSearch}
                       onChange={(e) => setIngredientSearch(e.target.value)}
-                      className="w-full bg-slate-50 border-none rounded-2xl py-4 pl-12 pr-6 text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none"
+                      className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl py-3 pl-10 pr-4 md:py-4 md:pl-12 md:pr-6 text-xs md:text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none"
                     />
                     
                     {/* 搜索结果下拉框 */}
                     {ingredientSearch && (
-                      <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-slate-100 z-20 max-h-48 overflow-y-auto p-2">
+                      <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl md:rounded-2xl shadow-2xl border border-slate-100 z-20 max-h-48 overflow-y-auto p-1.5 md:p-2">
                         {ingredients.filter(ing => ing.name.toLowerCase().includes(ingredientSearch.toLowerCase())).map(ing => (
                           <button
                             key={ing.id}
@@ -2954,10 +3196,10 @@ function DashboardContent() {
                               }
                               setIngredientSearch('');
                             }}
-                            className="w-full text-left px-4 py-3 hover:bg-slate-50 rounded-xl transition-colors flex items-center justify-between group"
+                            className="w-full text-left px-3 py-2 md:px-4 md:py-3 hover:bg-slate-50 rounded-lg md:rounded-xl transition-colors flex items-center justify-between group"
                           >
-                            <span className="text-sm font-medium text-slate-700">{ing.name}</span>
-                            <Plus className="w-4 h-4 text-slate-300 group-hover:text-emerald-500" />
+                            <span className="text-xs md:text-sm font-medium text-slate-700">{ing.name}</span>
+                            <Plus className="w-3.5 h-3.5 md:w-4 md:h-4 text-slate-300 group-hover:text-emerald-500" />
                           </button>
                         ))}
                         {/* 允许添加自定义成分 */}
@@ -2971,13 +3213,13 @@ function DashboardContent() {
                               setSelectedIngredients(prev => [...prev, { ingredient_id: newId, amount_per_unit: 0, unit: 'mg' }]);
                               setIngredientSearch('');
                             }}
-                            className="w-full text-left px-4 py-3 bg-emerald-50 hover:bg-emerald-100 rounded-xl transition-colors flex items-center justify-between group border border-dashed border-emerald-200"
+                            className="w-full text-left px-3 py-2 md:px-4 md:py-3 bg-emerald-50 hover:bg-emerald-100 rounded-lg md:rounded-xl transition-colors flex items-center justify-between group border border-dashed border-emerald-200"
                           >
                             <div className="flex flex-col">
-                              <span className="text-sm font-bold text-emerald-700">添加新成分: "{ingredientSearch}"</span>
-                              <span className="text-[10px] text-emerald-600">数据库未找到，点击直接创建</span>
+                              <span className="text-xs md:text-sm font-bold text-emerald-700">添加: "{ingredientSearch}"</span>
+                              <span className="text-[8px] md:text-[10px] text-emerald-600">数据库未找到，点击直接创建</span>
                             </div>
-                            <Plus className="w-4 h-4 text-emerald-500" />
+                            <Plus className="w-3.5 h-3.5 md:w-4 md:h-4 text-emerald-500" />
                           </button>
                         )}
                       </div>
@@ -2986,13 +3228,13 @@ function DashboardContent() {
 
                   {/* 选定成分的含量编辑 */}
                   {selectedIngredients.length > 0 && (
-                    <div className="bg-slate-50/50 rounded-2xl p-4 space-y-3">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">调整含量与单位</p>
+                    <div className="bg-slate-50/50 rounded-xl md:rounded-2xl p-3 md:p-4 space-y-2 md:space-y-3">
+                      <p className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">调整含量与单位</p>
                       {selectedIngredients.map((ing, idx) => {
                         const ingDetail = ingredients.find(i => i.id === ing.ingredient_id);
                         return (
-                          <div key={idx} className="flex items-center gap-3 bg-white p-3 rounded-xl border border-slate-100">
-                            <span className="text-xs font-bold text-slate-600 min-w-[80px]">{ingDetail?.name}</span>
+                          <div key={idx} className="flex items-center gap-2 md:gap-3 bg-white p-2 md:p-3 rounded-lg md:rounded-xl border border-slate-100">
+                            <span className="text-[10px] md:text-xs font-bold text-slate-600 min-w-[60px] md:min-w-[80px] truncate">{ingDetail?.name}</span>
                             <input 
                               type="number" 
                               placeholder="含量"
@@ -3002,7 +3244,7 @@ function DashboardContent() {
                                 newIngs[idx].amount_per_unit = Number(e.target.value);
                                 setSelectedIngredients(newIngs);
                               }}
-                              className="w-20 bg-slate-50 border-none rounded-lg py-2 px-3 text-xs focus:ring-1 focus:ring-emerald-500 outline-none"
+                              className="w-16 md:w-20 bg-slate-50 border-none rounded-lg py-1.5 md:py-2 px-2 md:px-3 text-[10px] md:text-xs focus:ring-1 focus:ring-emerald-500 outline-none"
                             />
                             <input 
                               type="text" 
@@ -3013,7 +3255,7 @@ function DashboardContent() {
                                 newIngs[idx].unit = e.target.value;
                                 setSelectedIngredients(newIngs);
                               }}
-                              className="w-16 bg-slate-50 border-none rounded-lg py-2 px-3 text-xs focus:ring-1 focus:ring-emerald-500 outline-none"
+                              className="w-12 md:w-16 bg-slate-50 border-none rounded-lg py-1.5 md:py-2 px-2 md:px-3 text-[10px] md:text-xs focus:ring-1 focus:ring-emerald-500 outline-none"
                             />
                           </div>
                         );
@@ -3021,7 +3263,7 @@ function DashboardContent() {
                     </div>
                   )}
                 </div>
-              <button type="submit" className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black shadow-xl shadow-emerald-600/20 hover:bg-emerald-700 transition-all mt-4">
+              <button type="submit" className="w-full py-3 md:py-4 bg-emerald-600 text-white rounded-xl md:rounded-2xl font-black text-sm md:text-base shadow-xl shadow-emerald-600/20 hover:bg-emerald-700 transition-all mt-2 md:mt-4">
                 {editingProduct ? '保存修改' : '确认录入'}
               </button>
             </form>
@@ -3031,21 +3273,21 @@ function DashboardContent() {
 
       {isTriggerModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-[32px] w-full max-w-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
-            <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between">
-              <h3 className="text-xl font-black text-slate-800">{editingTrigger ? '编辑干预规则' : '配置新干预规则'}</h3>
+          <div className="bg-white rounded-2xl md:rounded-[32px] w-full max-w-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="px-5 md:px-8 py-4 md:py-6 border-b border-slate-100 flex items-center justify-between">
+              <h3 className="text-lg md:text-xl font-black text-slate-800">{editingTrigger ? '编辑干预规则' : '配置新干预规则'}</h3>
               <button onClick={() => setIsTriggerModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X className="w-5 h-5 text-slate-400" /></button>
             </div>
-            <form onSubmit={handleSaveTrigger} className="p-8 space-y-6 overflow-y-auto max-h-[70vh]">
+            <form onSubmit={handleSaveTrigger} className="p-5 md:p-8 space-y-4 md:space-y-6 overflow-y-auto max-h-[85vh] md:max-h-[70vh]">
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">规则名称</label>
-                <input name="name" type="text" placeholder="如：连续断服预警" defaultValue={editingTrigger?.name} className="w-full bg-slate-50 border-none rounded-2xl py-4 px-6 text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none" required />
+                <input name="name" type="text" placeholder="如：连续断服预警" defaultValue={editingTrigger?.name} className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl py-3 md:py-4 px-4 md:px-6 text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none" required />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">分类</label>
-                  <select name="category" className="w-full bg-slate-50 border-none rounded-2xl py-4 px-6 text-sm focus:ring-2 focus:ring-emerald-500 outline-none appearance-none" defaultValue={editingTrigger?.category || 'compliance'}>
+                  <select name="category" className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl py-3 md:py-4 px-4 md:px-6 text-sm focus:ring-2 focus:ring-emerald-500 outline-none appearance-none" defaultValue={editingTrigger?.category || 'compliance'}>
                     <option value="compliance">依从性干预</option>
                     <option value="inventory">库存与复购</option>
                     <option value="symptom">体感与风险</option>
@@ -3054,7 +3296,7 @@ function DashboardContent() {
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">告警优先级</label>
-                  <select name="action_priority" className="w-full bg-slate-50 border-none rounded-2xl py-4 px-6 text-sm focus:ring-2 focus:ring-emerald-500 outline-none appearance-none" defaultValue={editingTrigger?.action?.priority || 'medium'}>
+                  <select name="action_priority" className="w-full bg-slate-50 border-none rounded-xl md:rounded-2xl py-3 md:py-4 px-4 md:px-6 text-sm focus:ring-2 focus:ring-emerald-500 outline-none appearance-none" defaultValue={editingTrigger?.action?.priority || 'medium'}>
                     <option value="low">低 (Low)</option>
                     <option value="medium">中 (Medium)</option>
                     <option value="high">高 (High)</option>
@@ -3064,7 +3306,7 @@ function DashboardContent() {
               </div>
 
               {/* A. Condition Pool */}
-              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-4">
+              <div className="p-4 bg-slate-50 rounded-xl md:rounded-2xl border border-slate-100 space-y-4">
                 <div className="text-[10px] font-black text-emerald-600 uppercase tracking-widest flex items-center gap-2">
                   <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
                   如果满足以下条件 (Condition)
@@ -3072,7 +3314,7 @@ function DashboardContent() {
                 
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">判定逻辑</label>
-                  <select name="condition_type" className="w-full bg-white border-none rounded-xl py-3 px-4 text-sm focus:ring-2 focus:ring-emerald-500 outline-none appearance-none" defaultValue={editingTrigger?.condition?.type || 'adherence_streak'}>
+                  <select name="condition_type" className="w-full bg-white border-none rounded-xl md:rounded-2xl py-3 md:py-4 px-4 md:px-6 text-sm focus:ring-2 focus:ring-emerald-500 outline-none appearance-none" defaultValue={editingTrigger?.condition?.type || 'adherence_streak'}>
                     <option value="adherence_streak">行为维度：连续 N 天断服</option>
                     <option value="stock_level">库存维度：库存水位低于 N 天</option>
                     <option value="vital_trend">体感维度：趋势指标连续下降 N 次</option>
@@ -3080,20 +3322,20 @@ function DashboardContent() {
                   </select>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">判定阈值 (N)</label>
-                    <input name="condition_threshold" type="number" defaultValue={editingTrigger?.condition?.threshold || 2} className="w-full bg-white border-none rounded-xl py-3 px-4 text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none" required />
+                    <input name="condition_threshold" type="number" defaultValue={editingTrigger?.condition?.threshold || 2} className="w-full bg-white border-none rounded-xl md:rounded-2xl py-3 md:py-4 px-4 md:px-6 text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none" required />
                   </div>
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">统计周期 (可选)</label>
-                    <input name="condition_period_days" type="number" placeholder="天数" defaultValue={editingTrigger?.condition?.period_days} className="w-full bg-white border-none rounded-xl py-3 px-4 text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none" />
+                    <input name="condition_period_days" type="number" placeholder="天数" defaultValue={editingTrigger?.condition?.period_days} className="w-full bg-white border-none rounded-xl md:rounded-2xl py-3 md:py-4 px-4 md:px-6 text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none" />
                   </div>
                 </div>
               </div>
 
               {/* B. Action Pool */}
-              <div className="p-4 bg-slate-900 rounded-2xl space-y-4">
+              <div className="p-4 bg-slate-900 rounded-xl md:rounded-2xl space-y-4">
                 <div className="text-[10px] font-black text-emerald-400 uppercase tracking-widest flex items-center gap-2">
                   <div className="w-1.5 h-1.5 rounded-full bg-emerald-400"></div>
                   则执行以下动作 (Action)
@@ -3101,7 +3343,7 @@ function DashboardContent() {
 
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">动作类型</label>
-                  <select name="action_type" className="w-full bg-slate-800 border-none text-white rounded-xl py-3 px-4 text-sm focus:ring-2 focus:ring-emerald-500 outline-none appearance-none" defaultValue={editingTrigger?.action?.type || 'push_red_dot'}>
+                  <select name="action_type" className="w-full bg-slate-800 border-none text-white rounded-xl md:rounded-2xl py-3 md:py-4 px-4 md:px-6 text-sm focus:ring-2 focus:ring-emerald-500 outline-none appearance-none" defaultValue={editingTrigger?.action?.type || 'push_red_dot'}>
                     <option value="push_red_dot">红点通知：生成待办事项</option>
                     <option value="send_template">模版推送：自动选择话术</option>
                     <option value="highlight_client">状态标记：列表高亮置顶</option>
@@ -3110,16 +3352,16 @@ function DashboardContent() {
 
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">动作标签 (如: 【沉默关怀】)</label>
-                  <input name="action_label" type="text" placeholder="显示在动作前的简短标签" defaultValue={editingTrigger?.action?.label} className="w-full bg-slate-800 border-none text-white rounded-xl py-3 px-4 text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none" required />
+                  <input name="action_label" type="text" placeholder="显示在动作前的简短标签" defaultValue={editingTrigger?.action?.label} className="w-full bg-slate-800 border-none text-white rounded-xl md:rounded-2xl py-3 md:py-4 px-4 md:px-6 text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none" required />
                 </div>
 
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">自动化话术模版</label>
-                  <textarea name="action_payload_template" placeholder="支持变量：{{client_name}}, {{product_name}}, {{threshold}}..." className="w-full bg-slate-800 border-none text-white rounded-xl py-3 px-4 text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none min-h-[80px]" defaultValue={editingTrigger?.action?.payload_template} required />
+                  <textarea name="action_payload_template" placeholder="支持变量：{{client_name}}, {{product_name}}, {{threshold}}..." className="w-full bg-slate-800 border-none text-white rounded-xl md:rounded-2xl py-3 md:py-4 px-4 md:px-6 text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none min-h-[80px]" defaultValue={editingTrigger?.action?.payload_template} required />
                 </div>
               </div>
 
-              <button type="submit" className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black shadow-xl shadow-emerald-600/20 hover:bg-emerald-700 transition-all mt-4">
+              <button type="submit" className="w-full py-3 md:py-4 bg-emerald-600 text-white rounded-xl md:rounded-2xl font-black shadow-xl shadow-emerald-600/20 hover:bg-emerald-700 transition-all mt-4">
                 {editingTrigger ? '更新规则配置' : '激活干预规则'}
               </button>
             </form>

@@ -178,6 +178,8 @@ export interface ProtocolTrigger {
   category: 'compliance' | 'inventory' | 'symptom' | 'growth';
   is_enabled: boolean;
   updated_at: string;
+  client_id?: string; // 所属客户 ID (可选，若为空则为全局)
+  is_global?: boolean; // 是否为全局触发器
   
   // A. 条件池 (Condition Pool) - 调用数据实体
   condition: {
@@ -228,6 +230,7 @@ export interface ProtocolAction {
   dosage_per_time: string;   // 每次服用量 (如: "1粒", "5ml")
   timing_tag: 'with_meal' | 'empty_stomach' | 'before_bed' | 'after_meal' | 'any_time'; // 服用时间标签
   usage_instructions?: string; // 自定义备注/书写使用方法
+  order: number; // 排序
   
   // 兼容性字段 (可选保留)
   time_slot?: TimeSlot;

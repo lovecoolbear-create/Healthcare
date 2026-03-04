@@ -22,7 +22,7 @@ interface SidebarProps {
   onTabChange?: (tab: ActiveTab) => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange }) => {
+export const Sidebar: React.FC<SidebarProps & { className?: string }> = ({ activeTab, onTabChange, className }) => {
   const { user, logout } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
@@ -46,8 +46,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange }) => {
     return activeTab === tab;
   };
 
+  const defaultClasses = "w-64 bg-slate-900 text-slate-300 flex flex-col shrink-0 h-screen sticky top-0";
+
   return (
-    <div className="w-64 bg-slate-900 text-slate-300 flex flex-col shrink-0 h-screen sticky top-0">
+    <div className={className || defaultClasses}>
       <div className="p-6">
         <div className="flex items-center gap-3 mb-2">
           <div className="w-10 h-10 rounded-xl bg-emerald-500 flex items-center justify-center text-white shadow-lg shadow-emerald-500/20">
@@ -95,7 +97,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange }) => {
           className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${isTabActive('templates') ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/20' : 'hover:bg-slate-800'}`}
         >
           <Layers className="w-5 h-5" />
-          健康调理方案库
+          健康调理配方库
         </button>
         
         <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-4 mt-8 mb-2">系统支撑</div>

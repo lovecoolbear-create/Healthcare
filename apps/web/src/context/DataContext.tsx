@@ -278,7 +278,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const cleanEmptyProtocols = async () => {
     const emptyProtocols = protocols.filter(p => 
-      (!p.name || p.name === '新健康调理方案' || p.name.trim() === '') && 
+      (!p.name || p.name === '新调理配方 SOP' || p.name.trim() === '') && 
       p.phases.length === 0 && 
       p.triggers.length === 0
     );

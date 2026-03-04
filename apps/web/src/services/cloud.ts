@@ -1,15 +1,27 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { supabaseConfig } from '../config/unicloud';
+import { memfireConfig } from '../config/memfire';
 
 /**
- * Supabase 数据同步服务
+ * CloudService 数据同步服务
+ * 
+ * 核心逻辑：
+ * 1. 优先尝试从云端 (Supabase Singapore) 获取/更新数据。
+ * 2. 如果云端配置为空或请求失败，自动降级到 LocalStorage。
+ * 3. 始终保持 LocalStorage 与最新成功获取的数据同步。
  */
 export class CloudService {
   private static instance: CloudService;
-  private supabase: SupabaseClient;
+  private supabase: SupabaseClient | null = null;
+  private isConfigured: boolean = false;
 
   private constructor() {
-    this.supabase = createClient(supabaseConfig.url, supabaseConfig.anonKey);
+    if (memfireConfig.url && memfireConfig.anonKey) {
+      this.supabase = createClient(memfireConfig.url, memfireConfig.anonKey);
+      this.isConfigured = true;
+      console.log('[Cloud] 🚀 云端已配置，优先使用 Supabase (Singapore) 同步');
+    } else {
+      console.warn('[Cloud] ⚠️ 云端未配置或为空，当前处于本地开发模式 (LocalStorage Only)');
+    }
   }
 
   public static getInstance(): CloudService {
@@ -23,8 +35,14 @@ export class CloudService {
    * 通用获取集合数据
    */
   public async getCollection<T>(collectionName: string): Promise<T[]> {
+    const localData = this.getLocal(collectionName);
+
+    if (!this.isConfigured || !this.supabase) {
+      return localData;
+    }
+
     try {
-      console.log(`[Cloud] 正在从 Supabase 获取集合: ${collectionName}...`);
+      console.log(`[Cloud] 正在从云端获取集合: ${collectionName}...`);
       
       const { data, error } = await this.supabase
         .from(collectionName)
@@ -32,18 +50,16 @@ export class CloudService {
 
       if (error) throw error;
 
-      console.log(`[Cloud] ✅ 获取 ${collectionName} 成功, 数量: ${data?.length || 0}`);
+      console.log(`[Cloud] ✅ 云端获取 ${collectionName} 成功, 数量: ${data?.length || 0}`);
       
-      // 更新本地缓存
       if (data) {
-        localStorage.setItem(`hc_${collectionName}`, JSON.stringify(data));
+        this.saveLocal(collectionName, data);
       }
       
       return (data || []) as T[];
     } catch (error: any) {
-      console.warn(`[Cloud] ⚠️ 获取云端失败，回退到本地数据:`, error.message);
-      const local = localStorage.getItem(`hc_${collectionName}`);
-      return local ? JSON.parse(local) : [];
+      console.warn(`[Cloud] ⚠️ 云端请求失败，回退到本地数据:`, error.message);
+      return localData;
     }
   }
 
@@ -51,26 +67,28 @@ export class CloudService {
    * 通用更新或添加数据 (同步整个列表)
    */
   public async syncData(collectionName: string, data: any[]): Promise<boolean> {
-    // 始终先保存一份到本地作为备份
-    localStorage.setItem(`hc_${collectionName}`, JSON.stringify(data));
+    // 始终保存到本地
+    this.saveLocal(collectionName, data);
+
+    if (!this.isConfigured || !this.supabase) {
+      return true;
+    }
 
     try {
-      console.log(`[Cloud] 🚀 开始同步 ${collectionName} 到 Supabase, 数据量: ${data.length}`);
+      console.log(`[Cloud] 🚀 正在同步 ${collectionName} 到云端, 数据量: ${data.length}`);
       
       if (data.length === 0) return true;
 
-      // 使用 upsert 进行批量同步
-      // 注意：Supabase 需要表有主键（通常是 id）
       const { error } = await this.supabase
         .from(collectionName)
         .upsert(data, { onConflict: 'id' });
 
       if (error) throw error;
       
-      console.log(`[Cloud] ✅ ${collectionName} 同备成功`);
+      console.log(`[Cloud] ✅ 云端同步成功`);
       return true;
     } catch (error: any) {
-      console.error(`[Cloud] ❌ 同步 ${collectionName} 失败:`, error.message || error);
+      console.error(`[Cloud] ❌ 云端同步失败:`, error.message || error);
       return false;
     }
   }
@@ -79,16 +97,18 @@ export class CloudService {
    * 单个添加
    */
   public async addItem(collectionName: string, item: any): Promise<void> {
+    // 先更新本地
+    const current = await this.getCollection(collectionName);
+    this.saveLocal(collectionName, [...current, item]);
+
+    if (!this.isConfigured || !this.supabase) return;
+
     try {
-      console.log(`[Cloud] 正在添加单条数据到 ${collectionName}...`);
-      const { error } = await this.supabase
-        .from(collectionName)
-        .insert([item]);
-      
+      const { error } = await this.supabase.from(collectionName).insert([item]);
       if (error) throw error;
-      console.log(`[Cloud] ✅ 添加成功`);
+      console.log(`[Cloud] ✅ 云端添加成功`);
     } catch (error: any) {
-      console.error(`[Cloud] ❌ 单个添加失败:`, error.message || error);
+      console.error(`[Cloud] ❌ 云端添加失败:`, error.message);
     }
   }
 
@@ -96,17 +116,23 @@ export class CloudService {
    * 单个更新
    */
   public async updateItem(collectionName: string, id: string, item: any): Promise<void> {
+    // 先更新本地
+    const current = await this.getCollection(collectionName);
+    const updated = current.map((i: any) => i.id === id ? { ...i, ...item } : i);
+    this.saveLocal(collectionName, updated);
+
+    if (!this.isConfigured || !this.supabase) return;
+
     try {
-      console.log(`[Cloud] 正在更新 ${collectionName}/${id}...`);
       const { error } = await this.supabase
         .from(collectionName)
         .update(item)
         .eq('id', id);
 
       if (error) throw error;
-      console.log(`[Cloud] ✅ 更新成功`);
+      console.log(`[Cloud] ✅ 云端更新成功`);
     } catch (error: any) {
-      console.error(`[Cloud] ❌ 单个更新失败:`, error.message || error);
+      console.error(`[Cloud] ❌ 云端更新失败:`, error.message);
     }
   }
 
@@ -114,18 +140,37 @@ export class CloudService {
    * 单个删除
    */
   public async deleteItem(collectionName: string, id: string): Promise<void> {
+    // 先更新本地
+    const current = await this.getCollection(collectionName);
+    const filtered = current.filter((i: any) => i.id !== id);
+    this.saveLocal(collectionName, filtered);
+
+    if (!this.isConfigured || !this.supabase) return;
+
     try {
-      console.log(`[Cloud] 正在删除 ${collectionName}/${id}...`);
       const { error } = await this.supabase
         .from(collectionName)
         .delete()
         .eq('id', id);
 
       if (error) throw error;
-      console.log(`[Cloud] ✅ 删除成功`);
+      console.log(`[Cloud] ✅ 云端删除成功`);
     } catch (error: any) {
-      console.error(`[Cloud] ❌ 单个删除失败:`, error.message || error);
+      console.error(`[Cloud] ❌ 云端删除失败:`, error.message);
     }
+  }
+
+  // --- Helper Methods ---
+
+  private getLocal(collectionName: string): any[] {
+    if (typeof window === 'undefined') return [];
+    const local = localStorage.getItem(`hc_${collectionName}`);
+    return local ? JSON.parse(local) : [];
+  }
+
+  private saveLocal(collectionName: string, data: any[]): void {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(`hc_${collectionName}`, JSON.stringify(data));
   }
 }
 
