@@ -26,6 +26,7 @@ import {
   ShoppingBag,
   GripVertical,
   Trash2,
+  RefreshCw,
   Image as ImageIcon
 } from 'lucide-react';
 import { 
@@ -915,29 +916,32 @@ export default function PlanClient() {
                         </div>
                       </div>
 
-                      <div className="bg-slate-900 rounded-[32px] p-8 text-white shadow-2xl shadow-slate-900/20">
-                        <h3 className="text-sm font-black uppercase tracking-widest mb-6 flex items-center gap-2">
-                          <Zap className="w-5 h-5 text-emerald-400" />
-                          智能干预触发器
+                    <div className="bg-slate-900 rounded-2xl p-6 text-white shadow-xl shadow-slate-900/20">
+                        <h3 className="text-xs font-black uppercase tracking-widest mb-5 flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Zap className="w-4 h-4 text-emerald-400" />
+                            智能干预触发器
+                          </div>
+                          <span className="text-[9px] px-2 py-0.5 bg-white/10 rounded-md opacity-60 font-medium">Active</span>
                         </h3>
-                        <div className="space-y-4">
+                        <div className="space-y-3">
                           {triggers.filter(t => t.client_id === selectedClient.id || t.is_global).map(trigger => {
                             const group = ALERT_GROUPS[getAlertGroup(trigger) as keyof typeof ALERT_GROUPS];
                             return (
-                              <div key={trigger.id} className="bg-white/5 rounded-2xl p-4 border border-white/10 hover:bg-white/10 transition-all group">
-                                <div className="flex items-center justify-between mb-2">
+                              <div key={trigger.id} className="bg-white/5 rounded-xl p-3 border border-white/10 hover:bg-white/10 transition-all group/item">
+                                <div className="flex items-center justify-between mb-1.5">
                                   <div className="flex items-center gap-2">
                                     {group && (
                                       <>
-                                        <group.icon className={`w-4 h-4 ${group.color}`} />
-                                        <span className="text-[10px] font-black uppercase tracking-tighter opacity-60">{group.label}</span>
+                                        <group.icon className={`w-3.5 h-3.5 ${group.color}`} />
+                                        <span className="text-[9px] font-black uppercase tracking-tighter opacity-40">{group.label}</span>
                                       </>
                                     )}
                                   </div>
-                                  <div className={`w-2 h-2 rounded-full ${trigger.is_enabled ? 'bg-emerald-500' : 'bg-slate-600'}`}></div>
+                                  <div className={`w-1.5 h-1.5 rounded-full ${trigger.is_enabled ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-slate-600'}`}></div>
                                 </div>
-                                <div className="text-xs font-bold mb-1">{trigger.name}</div>
-                                <div className="text-[10px] opacity-40 leading-relaxed">{trigger.action.label}</div>
+                                <div className="text-[11px] font-bold mb-0.5 text-slate-100">{trigger.name}</div>
+                                <div className="text-[9px] opacity-40 leading-tight line-clamp-1 group-hover/item:line-clamp-none transition-all">{trigger.action.label}</div>
                               </div>
                             );
                           })}
@@ -946,62 +950,63 @@ export default function PlanClient() {
                     </div>
 
                     {/* 关键生命体征动态 */}
-                    <div className="col-span-2 bg-white rounded-[40px] p-10 border border-slate-100 shadow-sm">
-                      <div className="flex items-center justify-between mb-10">
+                    <div className="col-span-2 bg-white rounded-2xl p-6 border border-slate-100 shadow-sm">
+                      <div className="flex items-center justify-between mb-6">
                         <div>
-                          <h3 className="text-xl font-black text-slate-900 tracking-tight">生命体征监控 (Vital Trends)</h3>
-                          <p className="text-xs text-slate-400 font-medium mt-1">最近 30 天关键健康指标波动情况</p>
+                          <h3 className="text-base font-black text-slate-900 tracking-tight">生命体征监控</h3>
+                          <p className="text-[10px] text-slate-400 font-medium mt-0.5">最近 30 天关键健康指标波动情况</p>
                         </div>
-                        <div className="flex gap-2">
-                          <button className="px-4 py-2 bg-slate-50 text-slate-400 text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-slate-100">周报</button>
-                          <button className="px-4 py-2 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-xl">月报</button>
+                        <div className="flex bg-slate-50 p-1 rounded-xl">
+                          <button className="px-3 py-1.5 text-slate-400 text-[9px] font-black uppercase tracking-widest rounded-lg hover:bg-white hover:text-slate-600 transition-all">周报</button>
+                          <button className="px-3 py-1.5 bg-white text-slate-900 text-[9px] font-black uppercase tracking-widest rounded-lg shadow-sm">月报</button>
                         </div>
                       </div>
                       
                       {/* 模拟图表区域 */}
-                      <div className="h-80 flex items-end justify-between gap-4 px-4">
+                      <div className="h-48 flex items-end justify-between gap-2 px-2">
                         {[45, 52, 48, 65, 58, 72, 68, 85, 78, 92, 88, 95].map((val, i) => (
-                          <div key={i} className="flex-1 group relative">
+                          <div key={i} className="flex-1 group relative h-full flex items-end">
                             <div 
-                              className="w-full bg-emerald-500 rounded-t-xl opacity-20 group-hover:opacity-100 transition-all duration-500 cursor-pointer"
+                              className="w-full bg-emerald-500 rounded-t-md opacity-20 group-hover:opacity-100 transition-all duration-300 cursor-pointer"
                               style={{ height: `${val}%` }}
                             >
-                              <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[10px] font-black px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity">
+                              <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[9px] font-black px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-20">
                                 {val}%
                               </div>
                             </div>
                           </div>
                         ))}
                       </div>
-                      <div className="flex justify-between mt-6 px-4">
+                      <div className="flex justify-between mt-4 px-2">
                         {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map(m => (
-                          <span key={m} className="text-[10px] font-black text-slate-300 uppercase">{m}</span>
+                          <span key={m} className="text-[8px] font-black text-slate-300 uppercase tracking-tighter">{m}</span>
                         ))}
                       </div>
 
-                      <div className="grid grid-cols-2 gap-8 mt-12 pt-10 border-t border-slate-50">
-                        <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center">
-                            <Activity className="w-6 h-6 text-rose-500" />
+                      <div className="grid grid-cols-2 gap-4 mt-8 pt-6 border-t border-slate-50">
+                        <div className="flex items-center gap-3 p-3 bg-slate-50/50 rounded-xl border border-transparent hover:border-slate-100 transition-all">
+                          <div className="w-10 h-10 bg-rose-50 rounded-lg flex items-center justify-center shrink-0">
+                            <Activity className="w-5 h-5 text-rose-500" />
                           </div>
                           <div>
-                            <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">平均心率 (RHR)</div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-2xl font-black text-slate-800">72</span>
-                              <span className="text-xs font-bold text-slate-400">bpm</span>
-                              <TrendingDown className="w-4 h-4 text-emerald-500" />
+                            <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">平均心率 (RHR)</div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-lg font-black text-slate-800">72</span>
+                              <span className="text-[9px] font-bold text-slate-400">bpm</span>
+                              <TrendingDown className="w-3.5 h-3.5 text-emerald-500" />
                             </div>
                           </div>
                         </div>
-                        <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center">
-                            <Moon className="w-6 h-6 text-blue-500" />
+                        <div className="flex items-center gap-3 p-3 bg-slate-50/50 rounded-xl border border-transparent hover:border-slate-100 transition-all">
+                          <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center shrink-0">
+                            <Moon className="w-5 h-5 text-blue-500" />
                           </div>
                           <div>
-                            <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">深睡占比 (Deep)</div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-2xl font-black text-slate-800">24%</span>
-                              <TrendingUp className="w-4 h-4 text-emerald-500" />
+                            <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">深睡占比 (Deep)</div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-lg font-black text-slate-800">24</span>
+                              <span className="text-[9px] font-bold text-slate-400">%</span>
+                              <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
                             </div>
                           </div>
                         </div>
@@ -1135,67 +1140,86 @@ export default function PlanClient() {
 
                 {/* 核心功能：库存追踪标签页 */}
                 {clientDetailTab === 'inventory' && (
-                  <div className="space-y-8 animate-in fade-in zoom-in-95 duration-500">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                  <div className="space-y-6 animate-in fade-in zoom-in-95 duration-500">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                       {/* 库存概览卡片 */}
-                      <div className="md:col-span-2 bg-white rounded-[40px] p-10 border border-slate-100 shadow-sm">
-                        <div className="flex items-center justify-between mb-10">
+                      <div className="md:col-span-2 bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+                        <div className="flex items-center justify-between mb-6">
                           <div>
-                            <h3 className="text-xl font-black text-slate-900 tracking-tight">产品库存实时监控</h3>
-                            <p className="text-xs text-slate-400 font-medium mt-1">基于当前干预配方的自动损耗计算</p>
+                            <h3 className="text-lg font-black text-slate-900 tracking-tight">产品库存实时监控</h3>
+                            <p className="text-[10px] text-slate-400 font-medium mt-1">基于当前干预配方的自动损耗计算</p>
                           </div>
                           <div className="flex gap-2">
-                            <button className="px-4 py-2 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-xl flex items-center gap-2">
-                              <Plus className="w-3.5 h-3.5" />
+                            <button className="px-3 py-1.5 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-lg flex items-center gap-2 hover:bg-slate-800 transition-colors">
+                              <Plus className="w-3 h-3" />
                               手动入库
                             </button>
                           </div>
                         </div>
 
-                        <div className="space-y-6">
-                          {protocol.phases.flatMap(p => p.actions).map(action => {
-                            const product = products.find(prod => prod.id === action.product_id);
-                            if (!product) return null;
-                            
-                            // 逻辑闭环：从 selectedClient.inventory_status 中获取真实库存
-                            const invItem = selectedClient.inventory_status?.find(i => i.product_id === product.id);
-                            const currentStock = invItem?.current_stock || 0;
-                            const dailyUsage = (action.frequency_per_day || 1) * (parseFloat(action.dosage_per_time) || 1);
-                            
-                            // 动态计算当前剩余天数 (基于校准日期和流逝时间)
-                            let remainingDays = dailyUsage > 0 ? Math.floor(currentStock / dailyUsage) : 0;
-                            if (invItem?.last_calibration_date) {
-                              const lastDate = new Date(invItem.last_calibration_date).getTime();
-                              const now = new Date().getTime();
-                              const daysPassed = Math.floor((now - lastDate) / (1000 * 60 * 60 * 24));
-                              remainingDays = Math.max(0, remainingDays - daysPassed);
-                            }
-                            
-                            const isLowStock = remainingDays < 7;
+                        <div className="border border-slate-100 rounded-xl overflow-hidden">
+                          {/* 表头 */}
+                          <div className="grid grid-cols-12 gap-4 px-4 py-2 bg-slate-50 border-b border-slate-100 text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                            <div className="col-span-4">产品信息</div>
+                            <div className="col-span-2 text-center">当前库存</div>
+                            <div className="col-span-2 text-center">预估可用</div>
+                            <div className="col-span-2 text-center">补货金额</div>
+                            <div className="col-span-2 text-right">操作</div>
+                          </div>
 
-                            return (
-                              <div key={action.id} className="flex items-center gap-6 p-6 bg-slate-50/50 rounded-3xl border border-slate-100 hover:bg-white hover:shadow-xl hover:border-emerald-100 transition-all group">
-                                <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center border border-slate-100 shadow-sm group-hover:scale-110 transition-transform shrink-0">
-                                  <Package className={`w-6 h-6 ${isLowStock ? 'text-rose-500' : 'text-slate-300'}`} />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex justify-between items-start mb-1">
-                                    <h4 className="font-black text-slate-800 truncate">{product.name}</h4>
-                                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-lg uppercase tracking-tighter ${isLowStock ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
-                                      {isLowStock ? '库存紧张' : '充足'}
+                          <div className="divide-y divide-slate-50">
+                            {protocol.phases.flatMap(p => p.actions).map(action => {
+                              const product = products.find(prod => prod.id === action.product_id);
+                              if (!product) return null;
+                              
+                              const invItem = selectedClient.inventory_status?.find(i => i.product_id === product.id);
+                              const currentStock = invItem?.current_stock || 0;
+                              const dailyUsage = (action.frequency_per_day || 1) * (parseFloat(action.dosage_per_time) || 1);
+                              
+                              let remainingDays = dailyUsage > 0 ? Math.floor(currentStock / dailyUsage) : 0;
+                              if (invItem?.last_calibration_date) {
+                                const lastDate = new Date(invItem.last_calibration_date).getTime();
+                                const now = new Date().getTime();
+                                const daysPassed = Math.floor((now - lastDate) / (1000 * 60 * 60 * 24));
+                                remainingDays = Math.max(0, remainingDays - daysPassed);
+                              }
+                              
+                              const isLowStock = remainingDays < 7;
+
+                              return (
+                                <div key={action.id} className="grid grid-cols-12 gap-4 items-center px-4 py-3 hover:bg-slate-50/50 transition-colors group">
+                                  <div className="col-span-4 flex items-center gap-3">
+                                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${isLowStock ? 'bg-rose-50' : 'bg-slate-50'}`}>
+                                      <Package className={`w-4 h-4 ${isLowStock ? 'text-rose-500' : 'text-slate-400'}`} />
+                                    </div>
+                                    <div className="min-w-0">
+                                      <div className="text-xs font-bold text-slate-800 truncate">{product.name}</div>
+                                      <div className="text-[9px] text-slate-400 font-medium">ID: {product.id}</div>
+                                    </div>
+                                  </div>
+                                  
+                                  <div className="col-span-2 text-center">
+                                    <div className="text-xs font-black text-slate-700">{currentStock} <span className="text-[9px] text-slate-400 font-normal">{product.dosage_unit || '粒'}</span></div>
+                                  </div>
+
+                                  <div className="col-span-2 text-center">
+                                    <span className={`text-xs font-black px-2 py-0.5 rounded-md ${isLowStock ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                                      {remainingDays} <span className="text-[9px] font-normal opacity-70">天</span>
                                     </span>
                                   </div>
-                                  <div className="flex items-center gap-4">
-                                    <div className="flex flex-col">
-                                      <span className="text-[10px] font-bold text-slate-400 uppercase">剩余库存</span>
-                                      <span className="text-sm font-black text-slate-700">{currentStock} <span className="text-[10px] text-slate-400">{product.dosage_unit || '粒'}</span></span>
-                                    </div>
-                                    <div className="w-px h-6 bg-slate-200"></div>
-                                    <div className="flex flex-col">
-                                      <span className="text-[10px] font-bold text-slate-400 uppercase">预估可用</span>
-                                      <span className={`text-sm font-black ${isLowStock ? 'text-rose-600' : 'text-emerald-600'}`}>{remainingDays} <span className="text-[10px] opacity-60">天</span></span>
-                                    </div>
-                                    <div className="w-px h-6 bg-slate-200"></div>
+
+                                  <div className="col-span-2 text-center">
+                                    {product.price ? (
+                                      <div className="text-xs font-black text-slate-900">
+                                        ¥{product.price}
+                                        <span className="text-[9px] text-slate-400 font-normal ml-0.5">/{product.packaging_unit || '瓶'}</span>
+                                      </div>
+                                    ) : (
+                                      <span className="text-[10px] text-slate-300">-</span>
+                                    )}
+                                  </div>
+
+                                  <div className="col-span-2 flex justify-end gap-1">
                                     <button 
                                       onClick={() => {
                                         const stock = prompt(`请输入 ${product.name} 的当前实测库存数量 (${product.dosage_unit || '粒'}):`, currentStock.toString());
@@ -1206,43 +1230,34 @@ export default function PlanClient() {
                                           }
                                         }
                                       }}
-                                      className="flex flex-col hover:text-emerald-500 transition-colors"
+                                      title="库存校准"
+                                      className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition-all"
                                     >
-                                      <span className="text-[10px] font-bold text-slate-400 uppercase">点击校准</span>
-                                      <span className="text-xs font-black text-slate-900 border-b border-dotted border-slate-300">Update Stock</span>
+                                      <RefreshCw className="w-3.5 h-3.5" />
                                     </button>
-                                    {product.price && (
-                                      <>
-                                        <div className="w-px h-6 bg-slate-200"></div>
-                                        <div className="flex flex-col">
-                                          <span className="text-[10px] font-bold text-slate-400 uppercase">补货金额</span>
-                                          <span className="text-sm font-black text-slate-900">¥ {product.price} <span className="text-[10px] text-slate-400">/ {product.packaging_unit || '瓶'}</span></span>
-                                        </div>
-                                      </>
-                                    )}
+                                    <button className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-all">
+                                      <ShoppingBag className="w-3.5 h-3.5" />
+                                    </button>
                                   </div>
                                 </div>
-                                <button className="p-3 bg-white border border-slate-100 text-slate-400 rounded-xl hover:text-emerald-500 hover:border-emerald-200 transition-all shadow-sm">
-                                  <ShoppingBag className="w-5 h-5" />
-                                </button>
-                              </div>
-                            );
-                          })}
+                              );
+                            })}
+                          </div>
                         </div>
                       </div>
 
                       {/* 补货决策看板 (闭环核心) */}
-                      <div className="space-y-8">
-                        <div className="bg-slate-900 rounded-[40px] p-8 text-white shadow-2xl shadow-slate-900/20 relative overflow-hidden">
-                          <div className="absolute top-0 right-0 p-6 opacity-10">
-                            <TrendingUp className="w-20 h-20 text-emerald-400" />
+                      <div className="space-y-6">
+                        <div className="bg-slate-900 rounded-2xl p-6 text-white shadow-xl shadow-slate-900/10 relative overflow-hidden">
+                          <div className="absolute top-0 right-0 p-4 opacity-5">
+                            <TrendingUp className="w-16 h-16 text-emerald-400" />
                           </div>
                           <div className="relative z-10">
-                            <h3 className="text-sm font-black uppercase tracking-widest mb-8 flex items-center gap-2">
-                              <Zap className="w-5 h-5 text-emerald-400" />
-                              本月补货决策 (AI + Data)
+                            <h3 className="text-[10px] font-black uppercase tracking-widest mb-4 flex items-center gap-2 text-emerald-400">
+                              <Zap className="w-3.5 h-3.5" />
+                              本月补货决策
                             </h3>
-                            <div className="space-y-6">
+                            <div className="space-y-4">
                               {(() => {
                                 const lowStockActions = protocol.phases.flatMap(p => p.actions).filter(action => {
                                   const product = products.find(prod => prod.id === action.product_id);
@@ -1250,7 +1265,6 @@ export default function PlanClient() {
                                   const currentStock = invItem?.current_stock || 0;
                                   const dailyUsage = (action.frequency_per_day || 1) * (parseFloat(action.dosage_per_time) || 1);
                                   
-                                  // 动态计算当前剩余天数
                                   let remainingDays = dailyUsage > 0 ? Math.floor(currentStock / dailyUsage) : 0;
                                   if (invItem?.last_calibration_date) {
                                     const lastDate = new Date(invItem.last_calibration_date).getTime();
@@ -1268,94 +1282,94 @@ export default function PlanClient() {
                                 }, 0);
 
                                 return (
-                                  <div className="p-5 bg-white/5 rounded-3xl border border-white/10">
-                                    <div className="text-[10px] font-black text-emerald-500 uppercase tracking-widest mb-1">预计补货总额</div>
-                                    <div className="text-4xl font-black tracking-tighter">¥ {totalRestockAmount.toLocaleString()}</div>
-                                    <p className="text-[10px] text-white/40 mt-2 leading-relaxed">基于当前 {lowStockActions.length} 个产品的消耗速度与剩余天数计算，建议在 5 天内完成补货以确保方案连续性。</p>
+                                  <div className="p-4 bg-white/5 rounded-xl border border-white/10">
+                                    <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">预计补货总额</div>
+                                    <div className="text-2xl font-black tracking-tighter text-white">¥ {totalRestockAmount.toLocaleString()}</div>
+                                    <p className="text-[9px] text-white/40 mt-2 leading-relaxed">基于 {lowStockActions.length} 个低库存产品计算</p>
                                   </div>
                                 );
                               })()}
-                              <button className="w-full py-4 bg-emerald-500 text-white rounded-2xl font-black text-sm hover:bg-emerald-400 transition-all shadow-xl shadow-emerald-500/20 flex items-center justify-center gap-2">
-                                <ShoppingBag className="w-4 h-4" />
+                              <button className="w-full py-3 bg-emerald-500 text-white rounded-xl font-black text-xs hover:bg-emerald-400 transition-all shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2">
+                                <ShoppingBag className="w-3.5 h-3.5" />
                                 生成补货订单
                               </button>
                             </div>
                           </div>
                         </div>
 
-                        <div className="bg-white rounded-[40px] p-8 border border-slate-100 shadow-sm">
-                          <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-6">库存变动日志</h3>
-                          <div className="space-y-4">
+                        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+                          <h3 className="text-[10px] font-black text-slate-900 uppercase tracking-widest mb-4">库存变动日志</h3>
+                          <div className="space-y-3">
                             {[
                               { date: '2024-03-20', action: '系统扣减', detail: '深海鱼油 -2 粒', color: 'text-rose-500' },
                               { date: '2024-03-15', action: '手动入库', detail: '益生菌 +60 粒', color: 'text-emerald-500' },
                               { date: '2024-03-10', action: '系统扣减', detail: '辅酶 Q10 -1 粒', color: 'text-rose-500' }
                             ].map((log, i) => (
-                              <div key={i} className="flex items-center justify-between py-3 border-b border-slate-50 last:border-none">
+                              <div key={i} className="flex items-center justify-between py-2 border-b border-slate-50 last:border-none">
                                 <div>
-                                  <div className="text-[10px] font-black text-slate-400">{log.date}</div>
-                                  <div className="text-xs font-bold text-slate-700">{log.action}</div>
+                                  <div className="text-[9px] font-black text-slate-400">{log.date}</div>
+                                  <div className="text-[10px] font-bold text-slate-700">{log.action}</div>
                                 </div>
-                                <div className={`text-xs font-black ${log.color}`}>{log.detail}</div>
+                                <div className={`text-[10px] font-black ${log.color}`}>{log.detail}</div>
                               </div>
                             ))}
                           </div>
+                          <button className="w-full mt-4 py-2 text-[10px] font-black text-slate-400 hover:text-slate-600 transition-colors uppercase tracking-widest">查看完整日志</button>
                         </div>
                       </div>
                     </div>
                   </div>
                 )}
 
-                {/* 核心功能：跟进日志标签页 */}
                 {clientDetailTab === 'notes' && (
-                  <div className="space-y-8 animate-in fade-in zoom-in-95 duration-500">
+                  <div className="space-y-6 animate-in fade-in zoom-in-95 duration-500">
                     <div className="flex items-center justify-between">
                       <div>
-                        <h3 className="text-xl font-black text-slate-900 tracking-tight">随访跟进记录</h3>
-                        <p className="text-xs text-slate-400 font-medium mt-1">关联干预方案执行情况与体感反馈的闭环记录</p>
+                        <h3 className="text-lg font-black text-slate-900 tracking-tight">随访跟进记录</h3>
+                        <p className="text-[10px] text-slate-400 font-medium mt-1">关联干预方案执行情况与体感反馈的闭环记录</p>
                       </div>
-                      <button className="px-6 py-3 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-2xl flex items-center gap-2 shadow-xl shadow-slate-900/10">
-                        <Plus className="w-4 h-4" />
+                      <button className="px-4 py-2 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-xl flex items-center gap-2 shadow-lg shadow-slate-900/10 hover:bg-slate-800 transition-all">
+                        <Plus className="w-3.5 h-3.5" />
                         新增随访笔记
                       </button>
                     </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
                       {/* 自动生成的执行摘要 (逻辑闭环) */}
                       <div className="lg:col-span-1 space-y-6">
-                        <div className="bg-emerald-600 rounded-[32px] p-8 text-white shadow-xl shadow-emerald-200/50 relative overflow-hidden">
-                          <div className="absolute top-0 right-0 p-6 opacity-10">
-                            <Activity className="w-20 h-20 text-white" />
+                        <div className="bg-emerald-600 rounded-2xl p-6 text-white shadow-xl shadow-emerald-200/20 relative overflow-hidden">
+                          <div className="absolute top-0 right-0 p-4 opacity-10">
+                            <Activity className="w-12 h-12 text-white" />
                           </div>
                           <div className="relative z-10">
-                            <h4 className="text-[10px] font-black uppercase tracking-[0.2em] mb-6 opacity-60">本周执行摘要 (闭环数据)</h4>
-                            <div className="space-y-6">
-                              <div className="flex items-end gap-2">
-                                <span className="text-4xl font-black">{selectedClient.adherence_score}%</span>
-                                <span className="text-[10px] font-bold opacity-60 mb-2">方案依从性</span>
+                            <h4 className="text-[9px] font-black uppercase tracking-[0.2em] mb-4 opacity-60">本周执行摘要</h4>
+                            <div className="space-y-4">
+                              <div className="flex items-end gap-1.5">
+                                <span className="text-3xl font-black leading-none">{selectedClient.adherence_score}%</span>
+                                <span className="text-[9px] font-bold opacity-60 mb-1">依从性</span>
                               </div>
-                              <div className="grid grid-cols-2 gap-4">
-                                <div className="p-4 bg-white/10 rounded-2xl border border-white/10">
-                                  <div className="text-[10px] font-black opacity-60 uppercase mb-1">漏服次数</div>
-                                  <div className="text-xl font-black">2 <span className="text-[10px] opacity-60">次</span></div>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div className="p-3 bg-white/10 rounded-xl border border-white/10">
+                                  <div className="text-[8px] font-black opacity-60 uppercase mb-0.5">漏服</div>
+                                  <div className="text-base font-black">2 <span className="text-[8px] opacity-60">次</span></div>
                                 </div>
-                                <div className="p-4 bg-white/10 rounded-2xl border border-white/10">
-                                  <div className="text-[10px] font-black opacity-60 uppercase mb-1">体感评分</div>
-                                  <div className="text-xl font-black">8.5 <span className="text-[10px] opacity-60">/10</span></div>
+                                <div className="p-3 bg-white/10 rounded-xl border border-white/10">
+                                  <div className="text-[8px] font-black opacity-60 uppercase mb-0.5">体感</div>
+                                  <div className="text-base font-black">8.5 <span className="text-[8px] opacity-60">/10</span></div>
                                 </div>
                               </div>
-                              <p className="text-[10px] leading-relaxed opacity-60">
-                                <span className="font-black text-white">AI 随访建议：</span> 客户本周依从性良好，但辅酶 Q10 出现 2 次漏服（均为睡前），建议将服用时间调整至晚餐随餐。
+                              <p className="text-[10px] leading-relaxed opacity-80 bg-white/5 p-2.5 rounded-lg border border-white/5">
+                                <span className="font-black">建议：</span> 漏服多见于睡前，建议调整至晚餐随餐。
                               </p>
                             </div>
                           </div>
                         </div>
 
-                        <div className="bg-white rounded-[32px] p-8 border border-slate-100 shadow-sm">
-                          <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6">快速标签</h4>
-                          <div className="flex flex-wrap gap-2">
-                            {['方案调整', '体感好转', '库存提醒', '过敏反应', '依从性高', '配合度一般'].map(tag => (
-                              <button key={tag} className="px-3 py-1.5 bg-slate-50 text-slate-500 text-[10px] font-black rounded-xl border border-slate-100 hover:bg-slate-900 hover:text-white transition-all">
+                        <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+                          <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-4">快速标签筛选</h4>
+                          <div className="flex flex-wrap gap-1.5">
+                            {['方案调整', '体感好转', '库存提醒', '过敏反应', '依从性高'].map(tag => (
+                              <button key={tag} className="px-2 py-1 bg-slate-50 text-slate-500 text-[9px] font-black rounded-lg border border-slate-100 hover:bg-slate-900 hover:text-white transition-all">
                                 {tag}
                               </button>
                             ))}
@@ -1364,41 +1378,43 @@ export default function PlanClient() {
                       </div>
 
                       {/* 时间轴记录 */}
-                      <div className="lg:col-span-2 space-y-6">
+                      <div className="lg:col-span-3 space-y-4">
                         {selectedClient.follow_up_notes && selectedClient.follow_up_notes.length > 0 ? (
                           selectedClient.follow_up_notes.map((note, idx) => (
-                            <div key={idx} className="bg-white rounded-[32px] p-8 border border-slate-100 shadow-sm hover:shadow-xl hover:border-emerald-100 transition-all group">
-                              <div className="flex items-center justify-between mb-4">
-                                <div className="flex items-center gap-3">
-                                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                            <div key={idx} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm hover:shadow-md hover:border-emerald-100 transition-all group">
+                              <div className="flex items-start justify-between gap-4">
+                                <div className="flex gap-4">
+                                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
                                     note.type === 'adjustment' ? 'bg-amber-50 text-amber-500' : 'bg-blue-50 text-blue-500'
                                   }`}>
-                                    {note.type === 'adjustment' ? <Zap className="w-5 h-5" /> : <MessageSquare className="w-5 h-5" />}
+                                    {note.type === 'adjustment' ? <Zap className="w-4 h-4" /> : <MessageSquare className="w-4 h-4" />}
                                   </div>
                                   <div>
-                                    <div className="text-[10px] font-black text-slate-400">{note.date}</div>
-                                    <div className="text-sm font-black text-slate-800">
-                                      {note.type === 'adjustment' ? '方案调整' : note.type === 'milestone' ? '关键里程碑' : '常规随访'}
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <span className="text-[11px] font-black text-slate-800">
+                                        {note.type === 'adjustment' ? '方案调整' : note.type === 'milestone' ? '关键里程碑' : '常规随访'}
+                                      </span>
+                                      <span className="text-[9px] font-medium text-slate-400">{note.date}</span>
+                                    </div>
+                                    <p className="text-xs text-slate-600 leading-relaxed font-medium mb-3">{note.content}</p>
+                                    <div className="flex gap-1.5">
+                                      {note.tags?.map(tag => (
+                                        <span key={tag} className="px-1.5 py-0.5 bg-slate-50 text-slate-400 text-[8px] font-black rounded border border-slate-100 uppercase tracking-tighter">{tag}</span>
+                                      ))}
                                     </div>
                                   </div>
                                 </div>
-                                <div className="flex gap-2">
-                                  {note.tags?.map(tag => (
-                                    <span key={tag} className="px-2 py-0.5 bg-slate-50 text-slate-400 text-[9px] font-black rounded-lg border border-slate-100">{tag}</span>
-                                  ))}
+                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                                  <button className="p-1.5 text-slate-300 hover:text-slate-600 hover:bg-slate-50 rounded-lg transition-all"><Plus className="w-3.5 h-3.5 rotate-45" /></button>
+                                  <button className="p-1.5 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-all"><Trash2 className="w-3.5 h-3.5" /></button>
                                 </div>
-                              </div>
-                              <p className="text-xs text-slate-600 leading-relaxed font-medium pl-13">{note.content}</p>
-                              <div className="mt-6 pt-6 border-t border-slate-50 flex justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button className="text-[10px] font-black text-slate-400 hover:text-slate-600">编辑</button>
-                                <button className="text-[10px] font-black text-rose-400 hover:text-rose-600">删除</button>
                               </div>
                             </div>
                           ))
                         ) : (
-                          <div className="bg-white rounded-[32px] p-20 border border-slate-100 shadow-sm flex flex-col items-center justify-center text-slate-400">
-                            <StickyNote className="w-12 h-12 mb-4 opacity-10" />
-                            <p className="text-sm font-medium">暂无随访记录</p>
+                          <div className="bg-white rounded-2xl p-16 border border-slate-100 shadow-sm flex flex-col items-center justify-center text-slate-400">
+                            <StickyNote className="w-10 h-10 mb-3 opacity-10" />
+                            <p className="text-xs font-medium">暂无随访记录</p>
                           </div>
                         )}
                       </div>
@@ -1406,109 +1422,96 @@ export default function PlanClient() {
                   </div>
                 )}
 
-                {/* 核心功能：检测证据标签页 */}
                 {clientDetailTab === 'evidence' && (
-                  <div className="space-y-8 animate-in fade-in zoom-in-95 duration-500">
+                  <div className="space-y-6 animate-in fade-in zoom-in-95 duration-500">
                     <div className="flex items-center justify-between">
                       <div>
-                        <h3 className="text-xl font-black text-slate-900 tracking-tight">客观检测证据链</h3>
-                        <p className="text-xs text-slate-400 font-medium mt-1">对比干预前后的客观指标变化，量化干预效果</p>
+                        <h3 className="text-lg font-black text-slate-900 tracking-tight">客观检测证据链</h3>
+                        <p className="text-[10px] text-slate-400 font-medium mt-1">对比干预前后的客观指标变化，量化干预效果</p>
                       </div>
-                      <button className="px-6 py-3 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-2xl flex items-center gap-2 shadow-xl shadow-slate-900/10">
-                        <Plus className="w-4 h-4" />
+                      <button className="px-4 py-2 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-xl flex items-center gap-2 shadow-lg shadow-slate-900/10">
+                        <Plus className="w-3.5 h-3.5" />
                         上传检测报告
                       </button>
                     </div>
 
                     {/* 方案指标关联看板 (Evidence Closure Logic) */}
-                    <div className="bg-emerald-900 rounded-[40px] p-8 text-white shadow-2xl shadow-emerald-900/20 relative overflow-hidden">
-                      <div className="absolute top-0 right-0 p-8 opacity-10">
-                        <Activity className="w-24 h-24 text-emerald-400" />
+                    <div className="bg-emerald-900 rounded-2xl p-6 text-white shadow-xl shadow-emerald-900/20 relative overflow-hidden">
+                      <div className="absolute top-0 right-0 p-4 opacity-10">
+                        <Activity className="w-16 h-16 text-emerald-400" />
                       </div>
                       <div className="relative z-10">
-                        <h4 className="text-[10px] font-black uppercase tracking-[0.2em] mb-6 flex items-center gap-2">
-                          <Zap className="w-4 h-4 text-emerald-400" />
-                          当前干预方案针对指标 (Targeted Metrics)
+                        <h4 className="text-[9px] font-black uppercase tracking-[0.2em] mb-4 flex items-center gap-2 opacity-60">
+                          <Zap className="w-3.5 h-3.5 text-emerald-400" />
+                          当前方案针对指标 (Targeted Metrics)
                         </h4>
-                        <div className="flex flex-wrap gap-4">
+                        <div className="flex flex-wrap gap-3">
                           {formulaTargetMetrics.length > 0 ? (
                             formulaTargetMetrics.map((metric, i) => {
-                              // 查找是否有对应的检测证据
                               const hasEvidence = selectedClient.evidence_chain?.some(record => 
                                 record.metrics?.some(m => m.name.toLowerCase().includes(metric.toLowerCase()) || metric.toLowerCase().includes(m.name.toLowerCase()))
                               );
                               
                               return (
-                                <div key={i} className={`px-6 py-4 rounded-3xl border transition-all group ${hasEvidence ? 'bg-white/20 border-white/30' : 'bg-white/10 border-white/10'}`}>
-                                  <div className="text-[10px] font-black opacity-60 uppercase mb-1">针对指标</div>
-                                  <div className="text-lg font-black flex items-center gap-2">
+                                <div key={i} className={`px-4 py-3 rounded-xl border transition-all group ${hasEvidence ? 'bg-white/10 border-white/20' : 'bg-white/5 border-white/10'}`}>
+                                  <div className="text-[8px] font-black opacity-40 uppercase mb-0.5 tracking-wider">针对指标</div>
+                                  <div className="text-sm font-black flex items-center gap-1.5">
                                     {metric}
-                                    {hasEvidence && <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" title="已有检测证据支撑" />}
+                                    {hasEvidence && <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />}
                                   </div>
-                                  <div className="mt-2 text-[9px] font-bold text-emerald-400 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    {hasEvidence ? (
-                                      <>
-                                        <CheckCircle2 className="w-3 h-3" />
-                                        已有证据支撑改善
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Activity className="w-3 h-3" />
-                                        方案已覆盖，待上传证据
-                                      </>
-                                    )}
+                                  <div className="mt-1.5 text-[8px] font-bold text-emerald-400 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    {hasEvidence ? '已有证据支撑' : '待上传证据'}
                                   </div>
                                 </div>
                               );
                             })
                           ) : (
-                            <div className="text-xs font-medium opacity-40 italic">当前方案暂无明确关联的生理指标</div>
+                            <div className="text-[10px] font-medium opacity-40 italic">当前方案暂无明确关联的生理指标</div>
                           )}
                         </div>
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       {selectedClient.evidence_chain && selectedClient.evidence_chain.length > 0 ? (
                         selectedClient.evidence_chain.map((record, idx) => (
-                          <div key={idx} className="bg-white rounded-[40px] overflow-hidden border border-slate-100 shadow-sm hover:shadow-2xl transition-all group">
-                            <div className="p-8 border-b border-slate-50">
-                              <div className="flex items-center justify-between mb-4">
-                                <div className="flex items-center gap-3">
-                                  <span className="px-3 py-1 bg-emerald-50 text-emerald-600 text-[10px] font-black rounded-xl border border-emerald-100">{record.title}</span>
+                          <div key={idx} className="bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-sm hover:shadow-md transition-all group">
+                            <div className="p-5 border-b border-slate-50">
+                              <div className="flex items-center justify-between mb-3">
+                                <div className="flex items-center gap-2">
+                                  <span className="px-2 py-0.5 bg-emerald-50 text-emerald-600 text-[9px] font-black rounded-lg border border-emerald-100">{record.title}</span>
                                   <button 
                                     onClick={() => generateMarketingAssetFromEvidence(record.title)}
-                                    className="px-3 py-1 bg-slate-900 text-white text-[10px] font-black rounded-xl hover:bg-emerald-600 transition-all flex items-center gap-2 shadow-lg shadow-slate-900/10"
+                                    className="p-1.5 bg-slate-900 text-white rounded-lg hover:bg-emerald-600 transition-all shadow-sm"
+                                    title="生成营销素材"
                                   >
                                     <Zap className="w-3 h-3" />
-                                    生成营销素材
                                   </button>
                                 </div>
-                                <span className="text-[10px] font-black text-slate-400">更新于 {record.date}</span>
+                                <span className="text-[9px] font-black text-slate-300">更新于 {record.date}</span>
                               </div>
-                              <h4 className="text-lg font-black text-slate-800">{record.title}</h4>
-                              {record.description && <p className="text-xs text-slate-500 mt-2 leading-relaxed">{record.description}</p>}
+                              <h4 className="text-sm font-black text-slate-800">{record.title}</h4>
+                              {record.description && <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">{record.description}</p>}
                             </div>
                             
                             {record.metrics && record.metrics.length > 0 ? (
-                              <div className="grid grid-cols-2 bg-slate-50">
+                              <div className="grid grid-cols-2 bg-slate-50/50">
                                 {record.metrics.map((metric, mIdx) => (
                                   <React.Fragment key={mIdx}>
-                                    <div className="p-8 border-r border-slate-100 relative group/img">
-                                      <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">干预前 (Baseline)</div>
-                                      <div className="aspect-square bg-white rounded-2xl border border-slate-200 flex flex-col items-center justify-center gap-3 overflow-hidden">
-                                        <div className="text-3xl font-black text-slate-300">{metric.before_value}</div>
-                                        <div className="text-[10px] font-bold text-slate-400">{metric.unit}</div>
+                                    <div className="p-4 border-r border-slate-100">
+                                      <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2">干预前</div>
+                                      <div className="flex flex-col items-center justify-center py-4 bg-white rounded-xl border border-slate-100">
+                                        <div className="text-xl font-black text-slate-400">{metric.before_value}</div>
+                                        <div className="text-[8px] font-bold text-slate-300 uppercase">{metric.unit}</div>
                                       </div>
                                     </div>
-                                    <div className="p-8 relative group/img">
-                                      <div className="text-[10px] font-black text-emerald-500 uppercase tracking-widest mb-4">干预后 (Follow-up)</div>
-                                      <div className="aspect-square bg-emerald-50 rounded-2xl border border-emerald-100 flex flex-col items-center justify-center gap-3 overflow-hidden">
-                                        <div className="text-3xl font-black text-emerald-600">{metric.after_value}</div>
-                                        <div className="text-[10px] font-bold text-emerald-500">{metric.unit}</div>
-                                        <div className="flex items-center gap-1 text-[10px] font-black text-emerald-500 mt-2">
-                                          {metric.trend === 'down' ? <TrendingDown className="w-3 h-3" /> : <TrendingUp className="w-3 h-3" />}
-                                          自动计算变化
+                                    <div className="p-4">
+                                      <div className="text-[8px] font-black text-emerald-500 uppercase tracking-widest mb-2">干预后</div>
+                                      <div className="flex flex-col items-center justify-center py-4 bg-emerald-50/50 rounded-xl border border-emerald-100">
+                                        <div className="text-xl font-black text-emerald-600">{metric.after_value}</div>
+                                        <div className="text-[8px] font-bold text-emerald-400 uppercase">{metric.unit}</div>
+                                        <div className="absolute top-0 right-0 p-2">
+                                          {metric.trend === 'down' ? <TrendingDown className="w-2.5 h-2.5 text-emerald-500" /> : <TrendingUp className="w-2.5 h-2.5 text-emerald-500" />}
                                         </div>
                                       </div>
                                     </div>
@@ -1516,24 +1519,24 @@ export default function PlanClient() {
                                 ))}
                               </div>
                             ) : (
-                              <div className="grid grid-cols-2 bg-slate-50">
-                                <div className="p-8 border-r border-slate-100 relative group/img">
-                                  <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">干预前</div>
-                                  <div className="aspect-square bg-white rounded-2xl border border-slate-200 flex items-center justify-center">
+                              <div className="grid grid-cols-2 bg-slate-50/50">
+                                <div className="p-4 border-r border-slate-100">
+                                  <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2">干预前</div>
+                                  <div className="aspect-video bg-white rounded-xl border border-slate-100 flex items-center justify-center overflow-hidden">
                                     {record.before_img_url ? (
                                       <img src={record.before_img_url} alt="Before" className="w-full h-full object-cover" />
                                     ) : (
-                                      <ImageIcon className="w-10 h-10 text-slate-200" />
+                                      <ImageIcon className="w-6 h-6 text-slate-100" />
                                     )}
                                   </div>
                                 </div>
-                                <div className="p-8 relative group/img">
-                                  <div className="text-[10px] font-black text-emerald-500 uppercase tracking-widest mb-4">干预后</div>
-                                  <div className="aspect-square bg-white rounded-2xl border border-slate-200 flex items-center justify-center">
+                                <div className="p-4">
+                                  <div className="text-[8px] font-black text-emerald-500 uppercase tracking-widest mb-2">干预后</div>
+                                  <div className="aspect-video bg-white rounded-xl border border-slate-100 flex items-center justify-center overflow-hidden">
                                     {record.after_img_url ? (
                                       <img src={record.after_img_url} alt="After" className="w-full h-full object-cover" />
                                     ) : (
-                                      <ImageIcon className="w-10 h-10 text-slate-200" />
+                                      <ImageIcon className="w-6 h-6 text-slate-100" />
                                     )}
                                   </div>
                                 </div>
@@ -1542,9 +1545,9 @@ export default function PlanClient() {
                           </div>
                         ))
                       ) : (
-                        <div className="col-span-2 bg-white rounded-[40px] p-20 border border-slate-100 shadow-sm flex flex-col items-center justify-center text-slate-400">
-                          <Eye className="w-12 h-12 mb-4 opacity-10" />
-                          <p className="text-sm font-medium">暂无对比证据</p>
+                        <div className="col-span-2 bg-white rounded-2xl p-12 border border-slate-100 shadow-sm flex flex-col items-center justify-center text-slate-400">
+                          <Eye className="w-8 h-8 mb-3 opacity-10" />
+                          <p className="text-xs font-medium">暂无对比证据</p>
                         </div>
                       )}
                     </div>
@@ -1553,47 +1556,47 @@ export default function PlanClient() {
 
                 {/* 核心功能：营销素材标签页 */}
                 {clientDetailTab === 'assets' && (
-                  <div className="space-y-8 animate-in fade-in zoom-in-95 duration-500">
+                  <div className="space-y-6 animate-in fade-in zoom-in-95 duration-500">
                     <div className="flex items-center justify-between">
                       <div>
-                        <h3 className="text-xl font-black text-slate-900 tracking-tight">好转案例海报库</h3>
-                        <p className="text-xs text-slate-400 font-medium mt-1">基于真实数据闭环自动生成的匿名案例海报</p>
+                        <h3 className="text-base font-black text-slate-900 tracking-tight">好转案例海报库</h3>
+                        <p className="text-[10px] text-slate-400 font-medium mt-0.5">基于真实数据闭环自动生成的匿名案例海报</p>
                       </div>
-                      <div className="flex gap-4">
-                        <button className="px-6 py-3 bg-white border-2 border-slate-100 text-slate-600 rounded-2xl font-black text-sm hover:bg-slate-50 transition-all">
+                      <div className="flex gap-3">
+                        <button className="px-4 py-2 bg-white border border-slate-200 text-slate-600 rounded-xl font-black text-xs hover:bg-slate-50 transition-all">
                           配置脱敏模板
                         </button>
-                        <button className="px-8 py-3 bg-slate-900 text-white rounded-2xl font-black text-sm hover:bg-slate-800 transition-all shadow-xl shadow-slate-900/10 flex items-center gap-2">
-                          <Zap className="w-4 h-4" />
-                          AI 一键生成海报
+                        <button className="px-5 py-2 bg-slate-900 text-white rounded-xl font-black text-xs hover:bg-slate-800 transition-all shadow-lg shadow-slate-900/10 flex items-center gap-2">
+                          <Zap className="w-3.5 h-3.5" />
+                          AI 一键生成
                         </button>
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-8">
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                       {selectedClient.marketing_assets && selectedClient.marketing_assets.length > 0 ? (
                         selectedClient.marketing_assets.map((asset, i) => (
-                          <div key={i} className="group relative aspect-[3/4] bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden hover:shadow-2xl hover:-translate-y-2 transition-all duration-500">
+                          <div key={i} className="group relative aspect-[3/4] bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
                             <div className="absolute inset-0 bg-gradient-to-b from-slate-900/0 via-slate-900/0 to-slate-900/60 group-hover:via-slate-900/20 transition-all"></div>
                             
                             {/* 海报内容 */}
-                            <div className="absolute inset-0 p-6 flex flex-col justify-between">
+                            <div className="absolute inset-0 p-4 flex flex-col justify-between">
                               <div className="flex justify-between items-start">
-                                <div className="w-8 h-8 bg-white/90 backdrop-blur rounded-xl flex items-center justify-center shadow-lg">
-                                  <ImageIcon className="w-4 h-4 text-slate-900" />
+                                <div className="w-7 h-7 bg-white/90 backdrop-blur rounded-lg flex items-center justify-center shadow-lg">
+                                  <ImageIcon className="w-3.5 h-3.5 text-slate-900" />
                                 </div>
-                                <span className="px-2 py-1 bg-white/20 backdrop-blur text-white text-[9px] font-black rounded-lg border border-white/20 uppercase tracking-tighter">
+                                <span className="px-1.5 py-0.5 bg-white/20 backdrop-blur text-white text-[8px] font-black rounded-md border border-white/20 uppercase tracking-tighter">
                                   {asset.type}
                                 </span>
                               </div>
                               
-                              <div className="transform translate-y-4 group-hover:translate-y-0 transition-transform duration-500">
-                                <div className="text-[10px] font-black text-white/60 mb-1">{asset.created_at.split('T')[0]}</div>
-                                <h4 className="text-sm font-black text-white mb-4">{asset.title}</h4>
-                                <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-500">
-                                  <button className="flex-1 py-2 bg-white text-slate-900 text-[10px] font-black rounded-xl hover:bg-emerald-500 hover:text-white transition-colors">分享</button>
-                                  <button className="p-2 bg-white/20 backdrop-blur text-white rounded-xl hover:bg-white/40 transition-colors">
-                                    <Eye className="w-4 h-4" />
+                              <div className="transform translate-y-2 group-hover:translate-y-0 transition-transform duration-300">
+                                <div className="text-[8px] font-black text-white/60 mb-0.5">{asset.created_at.split('T')[0]}</div>
+                                <h4 className="text-xs font-black text-white mb-3 line-clamp-1">{asset.title}</h4>
+                                <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                                  <button className="flex-1 py-1.5 bg-white text-slate-900 text-[9px] font-black rounded-lg hover:bg-emerald-500 hover:text-white transition-colors">分享</button>
+                                  <button className="p-1.5 bg-white/20 backdrop-blur text-white rounded-lg hover:bg-white/40 transition-colors">
+                                    <Eye className="w-3.5 h-3.5" />
                                   </button>
                                 </div>
                               </div>
@@ -1601,9 +1604,9 @@ export default function PlanClient() {
                           </div>
                         ))
                       ) : (
-                        <div className="col-span-4 bg-white rounded-[32px] p-20 border border-slate-100 shadow-sm flex flex-col items-center justify-center text-slate-400">
-                          <ImageIcon className="w-12 h-12 mb-4 opacity-10" />
-                          <p className="text-sm font-medium">暂无营销素材</p>
+                        <div className="col-span-4 bg-white rounded-2xl p-12 border border-slate-100 shadow-sm flex flex-col items-center justify-center text-slate-400">
+                          <ImageIcon className="w-10 h-10 mb-3 opacity-10" />
+                          <p className="text-xs font-medium">暂无营销素材</p>
                         </div>
                       )}
                     </div>
@@ -1612,27 +1615,27 @@ export default function PlanClient() {
 
                 {/* 核心功能：订单记录标签页 */}
                 {clientDetailTab === 'orders' && (
-                  <div className="space-y-8 animate-in fade-in zoom-in-95 duration-500">
+                  <div className="space-y-6 animate-in fade-in zoom-in-95 duration-500">
                     <div className="flex items-center justify-between">
                       <div>
-                        <h3 className="text-xl font-black text-slate-900 tracking-tight">订单流水记录</h3>
-                        <p className="text-xs text-slate-400 font-medium mt-1">关联补货决策与真实交易流水，闭环复购链路</p>
+                        <h3 className="text-base font-black text-slate-900 tracking-tight">订单流水记录</h3>
+                        <p className="text-[10px] text-slate-400 font-medium mt-0.5">关联补货决策与真实交易流水</p>
                       </div>
-                      <button className="px-6 py-3 bg-emerald-600 text-white text-[10px] font-black uppercase tracking-widest rounded-2xl flex items-center gap-2 shadow-xl shadow-emerald-600/10">
-                        <ShoppingBag className="w-4 h-4" />
+                      <button className="px-4 py-2 bg-emerald-600 text-white text-[10px] font-black uppercase tracking-widest rounded-xl flex items-center gap-2 shadow-lg shadow-emerald-600/10">
+                        <ShoppingBag className="w-3.5 h-3.5" />
                         录入新订单
                       </button>
                     </div>
 
-                    <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
+                    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
                       <table className="w-full text-left">
                         <thead>
                           <tr className="bg-slate-50/50 border-b border-slate-100">
-                            <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">订单日期</th>
-                            <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">产品详情</th>
-                            <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">数量</th>
-                            <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">状态</th>
-                            <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">操作</th>
+                            <th className="px-6 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest">订单日期</th>
+                            <th className="px-6 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest">产品详情</th>
+                            <th className="px-6 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest">数量</th>
+                            <th className="px-6 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest">状态</th>
+                            <th className="px-6 py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right">操作</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50">
@@ -1641,18 +1644,18 @@ export default function PlanClient() {
                               const product = products.find(p => p.id === order.product_id);
                               return (
                                 <tr key={order.id} className="hover:bg-slate-50/50 transition-colors group">
-                                  <td className="px-8 py-6">
-                                    <div className="text-sm font-black text-slate-700">{order.ordered_at.split('T')[0]}</div>
+                                  <td className="px-6 py-4">
+                                    <div className="text-xs font-black text-slate-700">{order.ordered_at.split('T')[0]}</div>
                                   </td>
-                                  <td className="px-8 py-6">
-                                    <div className="text-sm font-bold text-slate-600">{product?.name || '未知产品'}</div>
-                                    <div className="text-[10px] text-slate-400">{product?.brand}</div>
+                                  <td className="px-6 py-4">
+                                    <div className="text-xs font-bold text-slate-600">{product?.name || '未知产品'}</div>
+                                    <div className="text-[9px] text-slate-400">{product?.brand}</div>
                                   </td>
-                                  <td className="px-8 py-6">
-                                    <div className="text-sm font-black text-slate-900">{order.quantity} <span className="text-[10px] text-slate-400">{product?.packaging_unit || '瓶'}</span></div>
+                                  <td className="px-6 py-4">
+                                    <div className="text-xs font-black text-slate-900">{order.quantity} <span className="text-[9px] text-slate-400">{product?.packaging_unit || '瓶'}</span></div>
                                   </td>
-                                  <td className="px-8 py-6">
-                                    <span className={`px-2 py-1 text-[10px] font-black rounded-lg border uppercase ${
+                                  <td className="px-6 py-4">
+                                    <span className={`px-2 py-0.5 text-[9px] font-black rounded-md border uppercase ${
                                       order.status === 'delivered' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
                                       order.status === 'shipped' ? 'bg-blue-50 text-blue-600 border-blue-100' :
                                       order.status === 'pending' ? 'bg-amber-50 text-amber-600 border-amber-100' :
@@ -1663,18 +1666,18 @@ export default function PlanClient() {
                                        order.status === 'pending' ? '待处理' : '已取消'}
                                     </span>
                                   </td>
-                                  <td className="px-8 py-6 text-right">
-                                    <button className="text-[10px] font-black text-slate-400 hover:text-slate-900 transition-colors">查看详情</button>
+                                  <td className="px-6 py-4 text-right">
+                                    <button className="text-[9px] font-black text-slate-400 hover:text-slate-900 transition-colors">查看详情</button>
                                   </td>
                                 </tr>
                               );
                             })
                           ) : (
                             <tr>
-                              <td colSpan={5} className="px-8 py-20 text-center text-slate-400">
+                              <td colSpan={5} className="px-6 py-12 text-center text-slate-400">
                                 <div className="flex flex-col items-center">
-                                  <ShoppingBag className="w-12 h-12 mb-4 opacity-10" />
-                                  <p className="text-sm font-medium">暂无订单记录</p>
+                                  <ShoppingBag className="w-10 h-10 mb-3 opacity-10" />
+                                  <p className="text-xs font-medium">暂无订单记录</p>
                                 </div>
                               </td>
                             </tr>
