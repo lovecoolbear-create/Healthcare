@@ -14,7 +14,6 @@ import {
   Zap,
   TrendingUp,
   TrendingDown,
-  Moon,
   MessageSquare,
   Share2,
   ShieldCheck,
@@ -27,6 +26,8 @@ import {
   GripVertical,
   Trash2,
   RefreshCw,
+  Target,
+  ChevronRight,
   Image as ImageIcon
 } from 'lucide-react';
 import { 
@@ -49,7 +50,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
-import { Client, ProtocolPhase, ProtocolAction, ProtocolTrigger } from '@healthcare/shared';
+import { Client, Product, ProtocolPhase, ProtocolAction, ProtocolTrigger } from '@healthcare/shared';
 import { 
   mockProtocol as initialProtocol
 } from '../../../../../mp/src/mocks/data'; 
@@ -375,12 +376,14 @@ export default function PlanClient() {
   const { 
     clients, 
     products, 
+    ingredients,
     updateClient, 
     triggers, 
-    updateTrigger: persistUpdateTrigger, 
-    deleteTrigger,
     calibrateInventory,
-    checkConflicts
+    checkConflicts,
+    feedbacks,
+    addFeedback,
+    updateFeedback
   } = useData();
   const router = useRouter();
   
@@ -390,8 +393,8 @@ export default function PlanClient() {
   const [activeTab, setActiveTab] = useState<ActiveTab>(initialTab); 
   
   // 使用中心化逻辑 hook
-  const { ALERT_GROUPS } = useTriggers();
-  
+  const { ALERT_GROUPS: GLOBAL_ALERT_GROUPS } = useTriggers();
+
   // 当 URL 参数变化时更新 tab
   React.useEffect(() => {
     const tab = searchParams.get('tab') as ActiveTab;
@@ -403,13 +406,12 @@ export default function PlanClient() {
   const [searchQuery, setSearchQuery] = useState('');
   const [editingValues, setEditingValues] = useState<Record<string, any>>({});
   const selectedClientId = id as string;
-  const [clientDetailTab, setClientDetailTab] = useState<'status' | 'plan' | 'inventory' | 'notes' | 'evidence' | 'assets' | 'orders'>('plan');
+  const [clientDetailTab, setClientDetailTab] = useState<'status' | 'plan' | 'inventory' | 'notes' | 'evidence' | 'assets' | 'orders' | 'messages'>('plan');
 
   // Protocol Editor State
   const [protocol, setProtocol] = useState(initialProtocol);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
-
-  // 这里的 ALERT_GROUPS 已通过 useTriggers 统一管理
+  const [newMessage, setNewMessage] = useState('');
 
   const getAlertGroup = (trigger: ProtocolTrigger) => {
     if (trigger.action.priority === 'critical' || trigger.category === 'symptom' || trigger.condition.type === 'vital_trend') return 'urgent';
@@ -549,10 +551,8 @@ export default function PlanClient() {
   const selectedClient = clients.find(c => c.id === selectedClientId);
   const activeConflicts = selectedClient ? checkConflicts(selectedClient.id, protocol.id) : [];
 
-  // 逻辑闭环：计算当前方案针对的所有生理指标 (Evidence Closure)
   const getFormulaTargetMetrics = () => {
     const metrics = new Set<string>();
-    const { ingredients, products } = useData();
     
     protocol.phases.forEach(phase => {
       phase.actions.forEach(action => {
@@ -569,11 +569,67 @@ export default function PlanClient() {
 
   const formulaTargetMetrics = getFormulaTargetMetrics();
 
+  // 逻辑闭环：计算低库存补货需求 (用于看板和订单生成)
+  const lowStockInfo = React.useMemo(() => {
+    if (!selectedClient) return { actions: [], totalAmount: 0 };
+    
+    const actions = protocol.phases.flatMap(p => p.actions).filter(action => {
+      const product = products.find(prod => prod.id === action.product_id);
+      if (!product) return false;
+      
+      const invItem = selectedClient.inventory_status?.find(i => i.product_id === product.id);
+      const currentStock = invItem?.current_stock || 0;
+      const dailyUsage = (action.frequency_per_day || 1) * (parseFloat(action.dosage_per_time) || 1);
+      
+      let remainingDays = dailyUsage > 0 ? Math.floor(currentStock / dailyUsage) : 0;
+      if (invItem?.last_calibration_date) {
+        const lastDate = new Date(invItem.last_calibration_date).getTime();
+        const now = new Date().getTime();
+        const daysPassed = Math.floor((now - lastDate) / (1000 * 60 * 60 * 24));
+        remainingDays = Math.max(0, remainingDays - daysPassed);
+      }
+      
+      return remainingDays < 7;
+    });
+    
+    const totalAmount = actions.reduce((acc, action) => {
+      const product = products.find(prod => prod.id === action.product_id);
+      return acc + (product?.price || 0);
+    }, 0);
+    
+    return { actions, totalAmount };
+  }, [selectedClient, protocol, products]);
+
   // 逻辑闭环：更新客户信息（例如添加标签、更新依从性等）
   const handleUpdateClient = async (updates: Partial<Client>) => {
     if (!selectedClient) return;
     const updatedClient = { ...selectedClient, ...updates };
     await updateClient(updatedClient, updates);
+  };
+
+  // 逻辑闭环：生成补货订单并通知客户
+  const handleCreateRestockOrder = async () => {
+    if (!selectedClient || lowStockInfo.actions.length === 0) return;
+    
+    const orderItems = lowStockInfo.actions.map(action => {
+      const product = products.find(prod => prod.id === action.product_id);
+      return `• ${product?.name || '未知产品'}`;
+    });
+
+    const content = `[系统补货建议] 尊敬的 ${selectedClient.name}，根据您的方案执行情况，以下产品库存即将耗尽，建议您及时补货以确保持续调理：\n\n${orderItems.join('\n')}\n\n预计补货总额：¥${lowStockInfo.totalAmount.toLocaleString()}\n\n您可以点击下方按钮或联系我直接下单。`;
+    
+    await addFeedback({
+       id: `msg-${Date.now()}`,
+       client_id: selectedClient.id,
+       practitioner_id: selectedClient.practitioner_id || 'p-001',
+       sender_type: 'practitioner',
+       content: content,
+       is_read: false,
+       created_at: new Date().toISOString()
+     });
+    
+    alert('补货建议已成功发送至客户留言窗口！');
+    setClientDetailTab('messages');
   };
 
   // 逻辑闭环：从证据链自动生成营销素材
@@ -613,61 +669,6 @@ export default function PlanClient() {
       </div>
     );
   }
-
-  const handleUpdateTrigger = async (id: string) => {
-    const trigger = triggers.find(t => t.id === id);
-    if (!trigger) return;
-
-    const updates = editingValues[id] || {};
-    const updatedTrigger: ProtocolTrigger = {
-      ...trigger,
-      name: updates.name || trigger.name,
-      condition: {
-        ...trigger.condition,
-        threshold: updates.condition_threshold !== undefined ? updates.condition_threshold : trigger.condition.threshold,
-      },
-      action: {
-        ...trigger.action,
-        label: updates.action_label !== undefined ? updates.action_label : trigger.action.label,
-      }
-    };
-
-    await persistUpdateTrigger(updatedTrigger);
-    
-    setEditingValues(prev => {
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
-  };
-
-  const handleToggleTrigger = async (id: string) => {
-    const trigger = triggers.find(t => t.id === id);
-    if (!trigger) return;
-
-    const updatedTrigger = {
-      ...trigger,
-      is_enabled: !trigger.is_enabled
-    };
-
-    await persistUpdateTrigger(updatedTrigger);
-  };
-
-  const handleDeleteTrigger = async (id: string) => {
-    if (confirm('确定要删除这个触发器吗？')) {
-      await deleteTrigger(id);
-    }
-  };
-
-  const handleValueChange = (id: string, field: string, value: any) => {
-    setEditingValues(prev => ({
-      ...prev,
-      [id]: {
-        ...(prev[id] || {}),
-        [field]: value
-      }
-    }));
-  };
 
   const filteredClients = clients.filter((c: Client) => 
     c.name.includes(searchQuery) || c.phone?.includes(searchQuery)
@@ -735,6 +736,15 @@ export default function PlanClient() {
                         {selectedClient.tags?.map((tag, idx) => (
                           <span key={idx} className="px-3 py-1 bg-slate-100 text-slate-500 text-[10px] font-black uppercase tracking-widest rounded-full border border-slate-200/50">{tag}</span>
                         ))}
+                        {lowStockInfo.actions.length > 0 && (
+                          <div 
+                            onClick={() => setClientDetailTab('inventory')}
+                            className="cursor-pointer flex items-center gap-1.5 px-3 py-1 bg-rose-50 text-rose-600 text-[10px] font-black uppercase tracking-widest rounded-full border border-rose-100 animate-pulse hover:bg-rose-100 transition-colors"
+                          >
+                            <ShieldAlert className="w-3 h-3" />
+                            {lowStockInfo.actions.length} 项库存预警
+                          </div>
+                        )}
                         <button 
                           onClick={() => {
                             const tag = prompt('请输入新标签名称:');
@@ -770,9 +780,54 @@ export default function PlanClient() {
                     </div>
                     <div className="space-y-1">
                       <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">当前状态</div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 group/status">
                         <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-                        <span className="text-lg font-black text-emerald-600">方案执行中</span>
+                        {editingValues[`status_label_${selectedClient.id}`] !== undefined ? (
+                          <div className="flex items-center gap-2">
+                            <input 
+                              type="text"
+                              value={editingValues[`status_label_${selectedClient.id}`]}
+                              onChange={(e) => setEditingValues(prev => ({ ...prev, [`status_label_${selectedClient.id}`]: e.target.value }))}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  handleUpdateClient({ status_label: editingValues[`status_label_${selectedClient.id}`] });
+                                  setEditingValues(prev => {
+                                    const next = { ...prev };
+                                    delete next[`status_label_${selectedClient.id}`];
+                                    return next;
+                                  });
+                                }
+                              }}
+                              autoFocus
+                              className="text-lg font-black text-emerald-600 bg-emerald-50 border-none rounded-lg px-2 py-0.5 focus:ring-2 focus:ring-emerald-500/20 outline-none w-32"
+                            />
+                            <button 
+                              onClick={() => {
+                                handleUpdateClient({ status_label: editingValues[`status_label_${selectedClient.id}`] });
+                                setEditingValues(prev => {
+                                  const next = { ...prev };
+                                  delete next[`status_label_${selectedClient.id}`];
+                                  return next;
+                                });
+                              }}
+                              className="p-1 text-emerald-600 hover:bg-emerald-100 rounded-lg transition-colors"
+                            >
+                              <Save className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg font-black text-emerald-600">
+                              {selectedClient.status_label || '方案执行中'}
+                            </span>
+                            <button 
+                              onClick={() => setEditingValues(prev => ({ ...prev, [`status_label_${selectedClient.id}`]: selectedClient.status_label || '方案执行中' }))}
+                              className="p-1 text-slate-300 hover:text-emerald-500 hover:bg-emerald-50 rounded-lg transition-all opacity-0 group-hover/status:opacity-100"
+                            >
+                              <Plus className="w-4 h-4" />
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                     <div className="space-y-1">
@@ -782,14 +837,26 @@ export default function PlanClient() {
                   </div>
                 </div>
 
-                <div className="relative z-10 flex flex-col justify-between items-end gap-6 border-l border-slate-100 pl-10 hidden lg:flex">
-                  <div className="text-right">
-                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">依从性评分</div>
-                    <div className="text-5xl font-black text-emerald-600 leading-none tracking-tighter">{selectedClient.adherence_score}%</div>
-                  </div>
-                  <button className="flex items-center gap-2 px-6 py-3 bg-slate-900 text-white rounded-2xl font-black text-sm hover:bg-slate-800 transition-all shadow-xl shadow-slate-900/10">
+                <div className="relative z-10 flex flex-col justify-center items-end gap-3 border-l border-slate-100 pl-10">
+                  <button 
+                    onClick={() => {
+                      const url = `${window.location.origin}/track/${selectedClient.slug}`;
+                      navigator.clipboard.writeText(url);
+                      alert('专属打卡链接已复制: ' + url);
+                    }}
+                    className="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-2xl font-black text-xs hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-600/10 w-full"
+                  >
                     <Share2 className="w-4 h-4" />
-                    导出档案
+                    分享打卡链接
+                  </button>
+                  <button 
+                    onClick={() => {
+                      window.open(`/track/${selectedClient.slug}`, '_blank');
+                    }}
+                    className="flex items-center gap-2 px-6 py-3 bg-slate-900 text-white rounded-2xl font-black text-xs hover:bg-slate-800 transition-all shadow-xl shadow-slate-900/10 w-full"
+                  >
+                    <Eye className="w-4 h-4" />
+                    预览客户视图
                   </button>
                 </div>
               </div>
@@ -802,6 +869,7 @@ export default function PlanClient() {
                     { id: 'plan', label: '干预配方', icon: FlaskConical },
                     { id: 'inventory', label: '库存追踪', icon: Package },
                     { id: 'notes', label: '跟进日志', icon: StickyNote },
+                    { id: 'messages', label: '互动留言', icon: MessageSquare },
                     { id: 'evidence', label: '检测证据', icon: Eye },
                     { id: 'assets', label: '营销素材', icon: ImageIcon },
                     { id: 'orders', label: '订单记录', icon: ShoppingBag }
@@ -809,7 +877,7 @@ export default function PlanClient() {
                     <button
                       key={tab.id}
                       onClick={() => setClientDetailTab(tab.id as any)}
-                      className={`flex items-center gap-2.5 px-6 py-3 rounded-2xl text-xs font-black uppercase tracking-widest transition-all ${
+                      className={`flex items-center gap-2.5 px-6 py-3 rounded-2xl text-xs font-black uppercase tracking-widest transition-all relative ${
                         clientDetailTab === tab.id 
                           ? 'bg-slate-900 text-white shadow-xl shadow-slate-900/20' 
                           : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50'
@@ -817,199 +885,245 @@ export default function PlanClient() {
                     >
                       <tab.icon className="w-4 h-4" />
                       {tab.label}
+                      {tab.id === 'messages' && feedbacks.some(f => f.client_id === selectedClientId && !f.is_read && f.sender_type === 'client') && (
+                        <span className="absolute top-2 right-2 w-2 h-2 bg-rose-500 rounded-full border-2 border-white animate-pulse" />
+                      )}
                     </button>
                   ))}
                 </div>
 
                 {clientDetailTab === 'status' && (
-                  <div className="grid grid-cols-3 gap-8">
-                    {/* 健康基线与过敏原 */}
-                    <div className="col-span-1 space-y-8">
-                      <div className="bg-white rounded-[32px] p-8 border border-slate-100 shadow-sm">
-                        <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-6 flex items-center gap-2">
-                          <ShieldAlert className="w-5 h-5 text-rose-500" />
-                          健康风险基线
+                  <div className="space-y-6">
+                    {/* 第一排：指挥中心三位一体 */}
+                    <div className="grid grid-cols-3 gap-6">
+                      {/* 1. 360° 健康画像与风险 (Baseline & Risks) */}
+                      <div className="bg-white rounded-[32px] p-6 border border-slate-100 shadow-sm">
+                        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-2">
+                          <ShieldAlert className="w-4 h-4 text-rose-500" />
+                          360° 风险画像
                         </h3>
                         <div className="space-y-6">
-                          <div>
-                            <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">已知过敏原</div>
-                            <div className="flex flex-wrap gap-2">
-                              {selectedClient.allergies?.map((item, idx) => (
-                                <span key={idx} className="px-3 py-1.5 bg-rose-50 text-rose-600 text-[10px] font-black rounded-xl border border-rose-100">{item}</span>
-                              ))}
-                              <button 
-                                onClick={() => {
-                                  const item = prompt('请输入新过敏原:');
-                                  if (item) {
-                                    handleUpdateClient({ allergies: [...(selectedClient.allergies || []), item] });
-                                  }
-                                }}
-                                className="px-2 py-1 text-[10px] font-black text-rose-400 hover:text-rose-600 transition-colors"
-                              >
-                                + Add
-                              </button>
+                          {/* 过敏/冲突/用药 合并标签云 */}
+                          <div className="space-y-4">
+                            <div>
+                              <div className="text-[9px] font-black text-slate-300 uppercase tracking-widest mb-2 flex justify-between items-center">
+                                <span>核心风险点 (Allergies/Contra)</span>
+                                <div className="flex gap-2">
+                                  <button 
+                                    onClick={() => {
+                                      const item = prompt('请输入过敏项:');
+                                      if (item) handleUpdateClient({ allergies: [...(selectedClient.allergies || []), item] });
+                                    }}
+                                    className="text-[8px] font-black text-rose-400 hover:text-rose-600 uppercase"
+                                  >
+                                    + 过敏
+                                  </button>
+                                  <button 
+                                    onClick={() => {
+                                      const item = prompt('请输入禁忌项:');
+                                      if (item) handleUpdateClient({ contraindications: [...(selectedClient.contraindications || []), item] });
+                                    }}
+                                    className="text-[8px] font-black text-amber-400 hover:text-amber-600 uppercase"
+                                  >
+                                    + 禁忌
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="flex flex-wrap gap-1.5">
+                                {selectedClient.allergies?.map((item, idx) => (
+                                  <span key={idx} className="group relative px-2 py-1 bg-rose-50 text-rose-600 text-[9px] font-black rounded-lg border border-rose-100 flex items-center gap-1">
+                                    {item}
+                                    <button 
+                                      onClick={() => handleUpdateClient({ allergies: selectedClient.allergies?.filter((_, i) => i !== idx) })}
+                                      className="opacity-0 group-hover:opacity-100 text-rose-400 hover:text-rose-600 transition-opacity"
+                                    >
+                                      <X className="w-2 h-2" />
+                                    </button>
+                                  </span>
+                                ))}
+                                {selectedClient.contraindications?.map((item, idx) => (
+                                  <span key={idx} className="group relative px-2 py-1 bg-amber-50 text-amber-600 text-[9px] font-black rounded-lg border border-amber-100 flex items-center gap-1">
+                                    {item}
+                                    <button 
+                                      onClick={() => handleUpdateClient({ contraindications: selectedClient.contraindications?.filter((_, i) => i !== idx) })}
+                                      className="opacity-0 group-hover:opacity-100 text-amber-400 hover:text-amber-600 transition-opacity"
+                                    >
+                                      <X className="w-2 h-2" />
+                                    </button>
+                                  </span>
+                                ))}
+                              </div>
                             </div>
-                          </div>
-                          <div>
-                            <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">禁忌/冲突</div>
-                            <div className="flex flex-wrap gap-2">
-                              {selectedClient.contraindications?.map((item, idx) => (
-                                <span key={idx} className="px-3 py-1.5 bg-amber-50 text-amber-600 text-[10px] font-black rounded-xl border border-amber-100">{item}</span>
-                              ))}
-                              <button 
-                                onClick={() => {
-                                  const item = prompt('请输入新禁忌/冲突项:');
-                                  if (item) {
-                                    handleUpdateClient({ contraindications: [...(selectedClient.contraindications || []), item] });
-                                  }
-                                }}
-                                className="px-2 py-1 text-[10px] font-black text-amber-400 hover:text-amber-600 transition-colors"
-                              >
-                                + Add
-                              </button>
-                            </div>
-                          </div>
-                          
-                          {/* 动态冲突预警 (知识库闭环) */}
-                          {activeConflicts.length > 0 && (
-                            <div className="mt-8 p-6 bg-rose-50 rounded-[24px] border border-rose-100 animate-pulse shadow-lg shadow-rose-200/20">
-                              <h4 className="text-[10px] font-black text-rose-600 uppercase tracking-widest mb-4 flex items-center gap-2">
-                                <ShieldAlert className="w-4 h-4" />
-                                实时药物-营养素冲突预警
-                              </h4>
-                              <div className="space-y-4">
-                                {activeConflicts.map(conflict => (
-                                  <div key={conflict.id} className="bg-white/60 p-4 rounded-2xl border border-rose-200/50">
-                                    <div className="flex items-center gap-2 mb-2">
-                                      <span className="px-2 py-0.5 bg-rose-100 text-rose-700 text-[9px] font-black rounded uppercase">{conflict.severity} Risk</span>
-                                      <span className="text-xs font-black text-slate-800">{conflict.medication_keyword} x {conflict.ingredient_keyword}</span>
-                                    </div>
-                                    <p className="text-[10px] text-slate-600 leading-relaxed mb-2">{conflict.description}</p>
-                                    <div className="text-[10px] font-bold text-rose-600 flex items-center gap-1">
-                                      <Zap className="w-3 h-3" />
-                                      建议：{conflict.suggestion}
-                                    </div>
+                            <div>
+                              <div className="text-[9px] font-black text-slate-300 uppercase tracking-widest mb-2 flex justify-between items-center">
+                                <span>当前用药 (Medications)</span>
+                                <button 
+                                  onClick={() => {
+                                    const item = prompt('请输入正在服用的药物:');
+                                    if (item) handleUpdateClient({ current_medications: [...(selectedClient.current_medications || []), item] });
+                                  }}
+                                  className="text-[8px] font-black text-blue-400 hover:text-blue-600 uppercase"
+                                >
+                                  + 添加药物
+                                </button>
+                              </div>
+                              <div className="flex flex-wrap gap-1.5">
+                                {selectedClient.current_medications?.map((item, idx) => (
+                                  <div key={idx} className="relative group flex items-center gap-1">
+                                    <span className="px-2 py-1 bg-blue-50 text-blue-600 text-[9px] font-black rounded-lg border border-blue-100 flex items-center gap-1">
+                                      {item}
+                                      <button 
+                                        onClick={() => handleUpdateClient({ current_medications: selectedClient.current_medications?.filter((_, i) => i !== idx) })}
+                                        className="opacity-0 group-hover:opacity-100 text-blue-400 hover:text-blue-600 transition-opacity"
+                                      >
+                                        <X className="w-2 h-2" />
+                                      </button>
+                                    </span>
+                                    {/* 冲突关联微标 */}
+                                    {activeConflicts.some(c => c.medication_keyword === item) && (
+                                      <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-white animate-pulse"></div>
+                                    )}
                                   </div>
                                 ))}
                               </div>
                             </div>
-                          )}
-                          <div>
-                            <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">当前用药</div>
-                            <div className="flex flex-wrap gap-2">
-                              {selectedClient.current_medications?.map((item, idx) => (
-                                <span key={idx} className="px-3 py-1.5 bg-blue-50 text-blue-600 text-[10px] font-black rounded-xl border border-blue-100">{item}</span>
+                          </div>
+
+                          {/* 极简冲突预警列表 */}
+                          {activeConflicts.length > 0 && (
+                            <div className="pt-4 border-t border-slate-50 space-y-2">
+                              {activeConflicts.map(c => (
+                                <div key={c.id} className="flex items-start gap-2 p-2 bg-rose-50/50 rounded-xl border border-rose-100/50">
+                                  <Zap className="w-3 h-3 text-rose-500 mt-0.5" />
+                                  <div className="text-[9px] font-bold text-rose-700 leading-tight">
+                                    建议：{c.suggestion}
+                                  </div>
+                                </div>
                               ))}
-                              <button 
-                                onClick={() => {
-                                  const item = prompt('请输入当前用药:');
-                                  if (item) {
-                                    handleUpdateClient({ current_medications: [...(selectedClient.current_medications || []), item] });
-                                  }
-                                }}
-                                className="px-2 py-1 text-[10px] font-black text-blue-400 hover:text-blue-600 transition-colors"
-                              >
-                                + Add
-                              </button>
                             </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* 2. WROM 复购机会引擎 (Weighted Repurchase Opportunity Model) */}
+                      <div className="bg-slate-900 rounded-[32px] p-6 text-white shadow-xl shadow-slate-900/20 relative overflow-hidden group">
+                        {/* 背景微光 */}
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 blur-[60px] rounded-full -translate-y-1/2 translate-x-1/2"></div>
+                        
+                        <div className="relative z-10">
+                          <div className="flex items-center justify-between mb-6">
+                            <h3 className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em] flex items-center gap-2">
+                              <Target className="w-4 h-4 text-emerald-400" />
+                              WROM 复购预测
+                            </h3>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-2xl font-black text-emerald-400">88</span>
+                              <span className="text-[9px] font-black text-white/40 uppercase">Point</span>
+                            </div>
+                          </div>
+
+                          {/* 维度微缩进度条 */}
+                          <div className="space-y-4 mb-6">
+                            {[
+                              { label: '依从性 (40%)', val: 92, color: 'bg-emerald-500' },
+                              { label: '活跃度 (30%)', val: 75, color: 'bg-blue-400' },
+                              { label: '体感反馈 (20%)', val: 85, color: 'bg-amber-400' },
+                              { label: '库存余量 (10%)', val: 15, color: 'bg-rose-400' },
+                            ].map((dim, i) => (
+                              <div key={i}>
+                                <div className="flex justify-between text-[8px] font-black uppercase tracking-widest text-white/30 mb-1">
+                                  <span>{dim.label}</span>
+                                  <span>{dim.val}%</span>
+                                </div>
+                                <div className="h-1 bg-white/5 rounded-full overflow-hidden">
+                                  <div className={`h-full ${dim.color} transition-all duration-1000`} style={{ width: `${dim.val}%` }}></div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* 资深营养师一句话行动建议 */}
+                          <div className="p-3 bg-white/5 rounded-2xl border border-white/10 hover:bg-white/10 transition-all cursor-pointer">
+                            <div className="flex items-center gap-2 mb-1.5">
+                              <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></div>
+                              <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest">Action Strategy</span>
+                            </div>
+                            <p className="text-[10px] text-white/70 font-medium leading-relaxed">
+                              该客户连续 14 天打卡且体感反馈极佳，库存已跌至预警线。建议今日发送“回馈方案”引导升级复购。
+                            </p>
                           </div>
                         </div>
                       </div>
 
-                    <div className="bg-slate-900 rounded-2xl p-6 text-white shadow-xl shadow-slate-900/20">
-                        <h3 className="text-xs font-black uppercase tracking-widest mb-5 flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Zap className="w-4 h-4 text-emerald-400" />
-                            智能干预触发器
-                          </div>
-                          <span className="text-[9px] px-2 py-0.5 bg-white/10 rounded-md opacity-60 font-medium">Active</span>
+                      {/* 3. 智能行动链 (Actionable Triggers) */}
+                      <div className="bg-white rounded-[32px] p-6 border border-slate-100 shadow-sm">
+                        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-2">
+                          <Zap className="w-4 h-4 text-emerald-500" />
+                          实时行动链 (Active)
                         </h3>
                         <div className="space-y-3">
-                          {triggers.filter(t => t.client_id === selectedClient.id || t.is_global).map(trigger => {
-                            const group = ALERT_GROUPS[getAlertGroup(trigger) as keyof typeof ALERT_GROUPS];
-                            return (
-                              <div key={trigger.id} className="bg-white/5 rounded-xl p-3 border border-white/10 hover:bg-white/10 transition-all group/item">
-                                <div className="flex items-center justify-between mb-1.5">
-                                  <div className="flex items-center gap-2">
-                                    {group && (
-                                      <>
-                                        <group.icon className={`w-3.5 h-3.5 ${group.color}`} />
-                                        <span className="text-[9px] font-black uppercase tracking-tighter opacity-40">{group.label}</span>
-                                      </>
-                                    )}
-                                  </div>
-                                  <div className={`w-1.5 h-1.5 rounded-full ${trigger.is_enabled ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-slate-600'}`}></div>
+                          {(() => {
+                            const clientTriggers = triggers.filter(t => t.client_id === selectedClient.id || t.is_global);
+                            if (clientTriggers.length === 0) {
+                              return (
+                                <div className="flex flex-col items-center justify-center py-8 text-slate-300">
+                                  <Zap className="w-8 h-8 mb-2 opacity-20" />
+                                  <p className="text-[10px] font-medium">暂无触发干预</p>
                                 </div>
-                                <div className="text-[11px] font-bold mb-0.5 text-slate-100">{trigger.name}</div>
-                                <div className="text-[9px] opacity-40 leading-tight line-clamp-1 group-hover/item:line-clamp-none transition-all">{trigger.action.label}</div>
-                              </div>
-                            );
-                          })}
+                              );
+                            }
+                            return clientTriggers.slice(0, 4).map(trigger => {
+                              const group = GLOBAL_ALERT_GROUPS[getAlertGroup(trigger) as keyof typeof GLOBAL_ALERT_GROUPS];
+                              return (
+                                <div key={trigger.id} className="group/item bg-slate-50/50 hover:bg-white p-3 rounded-2xl border border-transparent hover:border-slate-100 transition-all cursor-pointer">
+                                  <div className="flex items-center justify-between mb-1.5">
+                                    <div className="flex items-center gap-2">
+                                      {group && <group.icon className={`w-3 h-3 ${group.color}`} />}
+                                      <span className="text-[9px] font-black text-slate-300 uppercase">{group?.label}</span>
+                                    </div>
+                                    <ChevronRight className="w-3 h-3 text-slate-200 group-hover/item:text-slate-400 transition-colors" />
+                                  </div>
+                                  <div className="text-[11px] font-black text-slate-800 mb-0.5 line-clamp-1">{trigger.name}</div>
+                                  <div className="text-[9px] text-slate-400 font-medium">{trigger.action.label}</div>
+                                </div>
+                              );
+                            });
+                          })()}
                         </div>
                       </div>
                     </div>
 
-                    {/* 关键生命体征动态 */}
-                    <div className="col-span-2 bg-white rounded-2xl p-6 border border-slate-100 shadow-sm">
+                    {/* 第二排：紧凑生命体征监控 (Compact Dashboard) */}
+                    <div className="bg-white rounded-[32px] p-6 border border-slate-100 shadow-sm">
                       <div className="flex items-center justify-between mb-6">
                         <div>
-                          <h3 className="text-base font-black text-slate-900 tracking-tight">生命体征监控</h3>
-                          <p className="text-[10px] text-slate-400 font-medium mt-0.5">最近 30 天关键健康指标波动情况</p>
+                          <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                            <Activity className="w-4 h-4 text-rose-500" />
+                            动态趋势监控 (Vitals)
+                          </h3>
                         </div>
-                        <div className="flex bg-slate-50 p-1 rounded-xl">
-                          <button className="px-3 py-1.5 text-slate-400 text-[9px] font-black uppercase tracking-widest rounded-lg hover:bg-white hover:text-slate-600 transition-all">周报</button>
-                          <button className="px-3 py-1.5 bg-white text-slate-900 text-[9px] font-black uppercase tracking-widest rounded-lg shadow-sm">月报</button>
+                        <div className="flex gap-4">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
+                            <span className="text-[9px] font-black text-slate-400 uppercase">RHR: 72bpm</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                            <span className="text-[9px] font-black text-slate-400 uppercase">Deep: 24%</span>
+                          </div>
                         </div>
                       </div>
                       
-                      {/* 模拟图表区域 */}
-                      <div className="h-48 flex items-end justify-between gap-2 px-2">
-                        {[45, 52, 48, 65, 58, 72, 68, 85, 78, 92, 88, 95].map((val, i) => (
+                      {/* 高密度迷你图表 */}
+                      <div className="h-24 flex items-end justify-between gap-1.5 px-1">
+                        {[45, 52, 48, 65, 58, 72, 68, 85, 78, 92, 88, 95, 82, 75, 88, 92, 95, 98, 85, 80, 75, 82, 88, 92].map((val, i) => (
                           <div key={i} className="flex-1 group relative h-full flex items-end">
                             <div 
-                              className="w-full bg-emerald-500 rounded-t-md opacity-20 group-hover:opacity-100 transition-all duration-300 cursor-pointer"
+                              className={`w-full rounded-t-sm transition-all duration-300 cursor-pointer ${i > 20 ? 'bg-emerald-500' : 'bg-slate-100'}`}
                               style={{ height: `${val}%` }}
-                            >
-                              <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[9px] font-black px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-20">
-                                {val}%
-                              </div>
-                            </div>
+                            ></div>
                           </div>
                         ))}
-                      </div>
-                      <div className="flex justify-between mt-4 px-2">
-                        {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map(m => (
-                          <span key={m} className="text-[8px] font-black text-slate-300 uppercase tracking-tighter">{m}</span>
-                        ))}
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-4 mt-8 pt-6 border-t border-slate-50">
-                        <div className="flex items-center gap-3 p-3 bg-slate-50/50 rounded-xl border border-transparent hover:border-slate-100 transition-all">
-                          <div className="w-10 h-10 bg-rose-50 rounded-lg flex items-center justify-center shrink-0">
-                            <Activity className="w-5 h-5 text-rose-500" />
-                          </div>
-                          <div>
-                            <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">平均心率 (RHR)</div>
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-lg font-black text-slate-800">72</span>
-                              <span className="text-[9px] font-bold text-slate-400">bpm</span>
-                              <TrendingDown className="w-3.5 h-3.5 text-emerald-500" />
-                            </div>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-3 p-3 bg-slate-50/50 rounded-xl border border-transparent hover:border-slate-100 transition-all">
-                          <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center shrink-0">
-                            <Moon className="w-5 h-5 text-blue-500" />
-                          </div>
-                          <div>
-                            <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">深睡占比 (Deep)</div>
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-lg font-black text-slate-800">24</span>
-                              <span className="text-[9px] font-bold text-slate-400">%</span>
-                              <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
-                            </div>
-                          </div>
-                        </div>
                       </div>
                     </div>
                   </div>
@@ -1068,8 +1182,8 @@ export default function PlanClient() {
 
                     {/* 配方阶段列表 (DND) */}
                     <div className="relative">
-                      {/* 连接线 */}
-                      <div className="absolute left-10 top-20 bottom-20 w-1 bg-slate-100 rounded-full"></div>
+                      {/* 连接线 - 渐变设计 */}
+                      <div className="absolute left-[39px] top-4 bottom-4 w-1 bg-gradient-to-b from-emerald-500 via-slate-100 to-slate-50 rounded-full"></div>
                       
                       <DndContext
                         sensors={sensors}
@@ -1150,7 +1264,38 @@ export default function PlanClient() {
                             <p className="text-[10px] text-slate-400 font-medium mt-1">基于当前干预配方的自动损耗计算</p>
                           </div>
                           <div className="flex gap-2">
-                            <button className="px-3 py-1.5 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-lg flex items-center gap-2 hover:bg-slate-800 transition-colors">
+                            <button 
+                              onClick={() => {
+                                const productsInProtocol = protocol.phases.flatMap(p => p.actions)
+                                  .map(a => products.find(prod => prod.id === a.product_id))
+                                  .filter((p, i, self) => p && self.findIndex(s => s?.id === p.id) === i) as Product[];
+                                
+                                if (productsInProtocol.length === 0) {
+                                  alert('当前方案暂无产品，请先添加产品动作。');
+                                  return;
+                                }
+
+                                const productList = productsInProtocol.map((p, i) => `${i + 1}. ${p.name}`).join('\n');
+                                const selection = prompt(`请选择要入库的产品编号:\n${productList}`);
+                                
+                                if (selection) {
+                                  const index = parseInt(selection) - 1;
+                                  if (index >= 0 && index < productsInProtocol.length) {
+                                    const product = productsInProtocol[index];
+                                    const amount = prompt(`请输入 ${product.name} 的入库数量 (${product.dosage_unit || '粒'}):`);
+                                    if (amount && !isNaN(parseFloat(amount))) {
+                                      const invItem = selectedClient.inventory_status?.find(i => i.product_id === product.id);
+                                      const newStock = (invItem?.current_stock || 0) + parseFloat(amount);
+                                      calibrateInventory(selectedClient.id, product.id, newStock);
+                                      alert(`已成功为 ${product.name} 入库 ${amount} ${product.dosage_unit || '粒'}。`);
+                                    }
+                                  } else {
+                                    alert('无效的选择。');
+                                  }
+                                }
+                              }}
+                              className="px-3 py-1.5 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-lg flex items-center gap-2 hover:bg-slate-800 transition-colors"
+                            >
                               <Plus className="w-3 h-3" />
                               手动入库
                             </button>
@@ -1258,41 +1403,28 @@ export default function PlanClient() {
                               本月补货决策
                             </h3>
                             <div className="space-y-4">
-                              {(() => {
-                                const lowStockActions = protocol.phases.flatMap(p => p.actions).filter(action => {
-                                  const product = products.find(prod => prod.id === action.product_id);
-                                  const invItem = selectedClient.inventory_status?.find(i => i.product_id === product?.id);
-                                  const currentStock = invItem?.current_stock || 0;
-                                  const dailyUsage = (action.frequency_per_day || 1) * (parseFloat(action.dosage_per_time) || 1);
-                                  
-                                  let remainingDays = dailyUsage > 0 ? Math.floor(currentStock / dailyUsage) : 0;
-                                  if (invItem?.last_calibration_date) {
-                                    const lastDate = new Date(invItem.last_calibration_date).getTime();
-                                    const now = new Date().getTime();
-                                    const daysPassed = Math.floor((now - lastDate) / (1000 * 60 * 60 * 24));
-                                    remainingDays = Math.max(0, remainingDays - daysPassed);
-                                  }
-                                  
-                                  return remainingDays < 7;
-                                });
-                                
-                                const totalRestockAmount = lowStockActions.reduce((acc, action) => {
-                                  const product = products.find(prod => prod.id === action.product_id);
-                                  return acc + (product?.price || 0);
-                                }, 0);
-
-                                return (
+                              {lowStockInfo.actions.length === 0 ? (
+                                <div className="p-6 bg-emerald-500/10 rounded-2xl border border-emerald-500/20 text-center">
+                                  <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto mb-2" />
+                                  <div className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">库存充足</div>
+                                  <p className="text-[9px] text-white/40 mt-1">当前所有产品均在安全水位</p>
+                                </div>
+                              ) : (
+                                <>
                                   <div className="p-4 bg-white/5 rounded-xl border border-white/10">
                                     <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">预计补货总额</div>
-                                    <div className="text-2xl font-black tracking-tighter text-white">¥ {totalRestockAmount.toLocaleString()}</div>
-                                    <p className="text-[9px] text-white/40 mt-2 leading-relaxed">基于 {lowStockActions.length} 个低库存产品计算</p>
+                                    <div className="text-2xl font-black tracking-tighter text-white">¥ {lowStockInfo.totalAmount.toLocaleString()}</div>
+                                    <p className="text-[9px] text-white/40 mt-2 leading-relaxed">基于 {lowStockInfo.actions.length} 个低库存产品计算</p>
                                   </div>
-                                );
-                              })()}
-                              <button className="w-full py-3 bg-emerald-500 text-white rounded-xl font-black text-xs hover:bg-emerald-400 transition-all shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2">
-                                <ShoppingBag className="w-3.5 h-3.5" />
-                                生成补货订单
-                              </button>
+                                  <button 
+                                    onClick={handleCreateRestockOrder}
+                                    className="w-full py-3 bg-emerald-500 text-white rounded-xl font-black text-xs hover:bg-emerald-400 transition-all shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2"
+                                  >
+                                    <ShoppingBag className="w-3.5 h-3.5" />
+                                    生成补货订单
+                                  </button>
+                                </>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -1417,6 +1549,121 @@ export default function PlanClient() {
                             <p className="text-xs font-medium">暂无随访记录</p>
                           </div>
                         )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {clientDetailTab === 'messages' && (
+                  <div className="flex flex-col h-[600px] bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden animate-in fade-in zoom-in-95 duration-500">
+                    {/* 消息头部 */}
+                    <div className="p-6 border-b border-slate-50 flex items-center justify-between bg-slate-50/50">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center text-white font-black">
+                          {selectedClient.name[0]}
+                        </div>
+                        <div>
+                          <h3 className="text-base font-black text-slate-900">{selectedClient.name}</h3>
+                          <p className="text-[10px] text-emerald-600 font-bold flex items-center gap-1.5">
+                            <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+                            双端加密互动中
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button className="p-2 text-slate-400 hover:text-slate-600 transition-colors"><RefreshCw className="w-4 h-4" /></button>
+                      </div>
+                    </div>
+
+                    {/* 消息列表 */}
+                    <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] bg-fixed">
+                      {feedbacks.filter(f => f.client_id === selectedClientId).length > 0 ? (
+                        feedbacks
+                          .filter(f => f.client_id === selectedClientId)
+                          .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+                          .map((msg) => (
+                            <div 
+                              key={msg.id} 
+                              className={`flex ${msg.sender_type === 'practitioner' ? 'justify-end' : 'justify-start'}`}
+                              onMouseEnter={() => {
+                                if (msg.sender_type === 'client' && !msg.is_read) {
+                                  updateFeedback(msg.id, { is_read: true });
+                                }
+                              }}
+                            >
+                              <div className={`max-w-[70%] space-y-1`}>
+                                <div className={`px-5 py-3 rounded-3xl text-xs font-medium shadow-sm leading-relaxed ${
+                                  msg.sender_type === 'practitioner' 
+                                    ? 'bg-slate-900 text-white rounded-tr-none' 
+                                    : 'bg-white border border-slate-100 text-slate-700 rounded-tl-none'
+                                }`}>
+                                  {msg.content}
+                                </div>
+                                <div className={`text-[8px] font-bold text-slate-400 px-2 flex items-center gap-2 ${
+                                  msg.sender_type === 'practitioner' ? 'justify-end' : 'justify-start'
+                                }`}>
+                                  {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  {msg.sender_type === 'practitioner' && (
+                                    <span className={msg.is_read ? 'text-emerald-500' : 'text-slate-300'}>
+                                      {msg.is_read ? '已读' : '未读'}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                      ) : (
+                        <div className="h-full flex flex-col items-center justify-center text-slate-300 space-y-4">
+                          <MessageSquare className="w-12 h-12 opacity-10" />
+                          <p className="text-[11px] font-bold uppercase tracking-widest">暂无消息记录，开始第一条对话吧</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 输入区域 */}
+                    <div className="p-6 bg-white border-t border-slate-50">
+                      <div className="relative flex items-center gap-4">
+                        <input 
+                          type="text" 
+                          value={newMessage}
+                          onChange={(e) => setNewMessage(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && newMessage.trim()) {
+                              const feedback = {
+                                id: `msg-${Date.now()}`,
+                                client_id: selectedClientId,
+                                practitioner_id: selectedClient.practitioner_id,
+                                content: newMessage,
+                                sender_type: 'practitioner' as const,
+                                is_read: false,
+                                created_at: new Date().toISOString()
+                              };
+                              addFeedback(feedback);
+                              setNewMessage('');
+                            }
+                          }}
+                          placeholder="输入指导建议或鼓励话术..."
+                          className="flex-1 bg-slate-50 border-none rounded-2xl py-4 px-6 text-sm font-medium focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all"
+                        />
+                        <button 
+                          disabled={!newMessage.trim()}
+                          onClick={() => {
+                            const feedback = {
+                              id: `msg-${Date.now()}`,
+                              client_id: selectedClientId,
+                              practitioner_id: selectedClient.practitioner_id,
+                              content: newMessage,
+                              sender_type: 'practitioner' as const,
+                              is_read: false,
+                              created_at: new Date().toISOString()
+                            };
+                            addFeedback(feedback);
+                            setNewMessage('');
+                          }}
+                          className="w-12 h-12 bg-slate-900 text-white rounded-2xl flex items-center justify-center hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-slate-900/10"
+                        >
+                          <ChevronRight className="w-5 h-5" />
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -1640,7 +1887,7 @@ export default function PlanClient() {
                         </thead>
                         <tbody className="divide-y divide-slate-50">
                           {selectedClient.order_history && selectedClient.order_history.length > 0 ? (
-                            selectedClient.order_history.map((order, i) => {
+                            selectedClient.order_history.map((order) => {
                               const product = products.find(p => p.id === order.product_id);
                               return (
                                 <tr key={order.id} className="hover:bg-slate-50/50 transition-colors group">

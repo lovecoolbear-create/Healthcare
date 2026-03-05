@@ -92,6 +92,10 @@ export interface Client {
   last_alert_at?: string; // 最近一次告警触发时间
   last_alert_priority?: 'low' | 'medium' | 'high' | 'critical'; // 最近一次告警优先级
   
+  status_label?: string; // [v3.9] 手动标注的客户状态 (如: "减脂中", "动力下降")
+  
+  slug: string; // URL 混淆 Slug (Random UUID for client access)
+  
   created_at: string;
 }
 
@@ -356,4 +360,24 @@ export interface ProfessionalFeed {
   content_url: string;
   summary?: string;
   created_at: string;
+}
+
+// 4. 真实互动与体征日志 (Interaction & Vitals) [v3.9]
+export interface Feedback {
+  id: string;
+  client_id: string;
+  practitioner_id: string;
+  content: string;
+  sender_type: 'client' | 'practitioner';
+  is_read: boolean;
+  created_at: string;
+}
+
+export interface WeightLog {
+  id: string;
+  client_id: string;
+  weight_kg: number;
+  body_fat_percentage?: number; // 体脂率 (%)
+  recorded_at: string;
+  source: 'manual' | 'report' | 'device';
 }

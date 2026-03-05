@@ -97,6 +97,7 @@ export const mockClient: Client = {
   loyalty_points: 1250,
   checkin_streak: 5,
   missed_days: 0,
+  slug: 'user-7d2f-4b9e-91a2',
   inventory_status: [
     { product_id: 'p-1', current_stock: 45, remaining_days: 15, last_calibration_date: '2024-03-01' },
     { product_id: 'p-2', current_stock: 4, remaining_days: 2, last_calibration_date: '2024-03-01' },
@@ -195,6 +196,7 @@ export const mockClients: Client[] = [
       { id: 'note-3', client_id: 'client-2', date: '2024-02-28', content: '情绪波动较大，反馈产品颗粒太大吞咽困难。', type: 'regular', practitioner_id: 'pract-1', created_at: '2024-02-28T00:00:00Z' }
     ],
     tags: ['备孕中', '工作压力大'],
+    slug: 'user-8e3f-1c2d-9a8b',
     created_at: '2024-01-15'
   },
   {
@@ -210,6 +212,7 @@ export const mockClients: Client[] = [
     conversion_intent: 'low',
     loyalty_points: 50,
     health_baseline: '严重睡眠不足，压力性肥胖',
+    slug: 'user-3b1a-4c5d-6e7f',
     inventory_status: [
       { product_id: 'p-2', current_stock: 40, remaining_days: 20, last_calibration_date: '2024-03-01' }
     ],

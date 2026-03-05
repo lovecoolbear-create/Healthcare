@@ -8,7 +8,7 @@ import {
   mockProtocol,
   mockIngredients
 } from '../../../mp/src/mocks/data';
-import { Client, Product, Protocol, ProtocolTrigger, Ingredient, FollowUpNote, ConflictRule, UserTask } from '@healthcare/shared';
+import { Client, Product, Protocol, ProtocolTrigger, Ingredient, FollowUpNote, ConflictRule, UserTask, Feedback, WeightLog } from '@healthcare/shared';
 import { cloud } from '../services/cloud';
 
 // --- 类型定义 ---
@@ -30,6 +30,8 @@ interface DataContextType {
   importBatches: ImportBatch[]; // 新增：导入批次记录
   userTasks: UserTask[]; // 新增：手动创建的待办任务
   conflictRules: ConflictRule[]; // 新增：冲突规则库
+  feedbacks: Feedback[]; // [v3.9] 留言互动数据
+  weightLogs: WeightLog[]; // [v3.9] 体征日志数据
   addClient: (client: Client) => Promise<void>;
   updateClient: (client: Client, partial?: Partial<Client>) => Promise<void>;
   deleteClient: (id: string) => Promise<void>;
@@ -50,6 +52,9 @@ interface DataContextType {
   addUserTask: (task: UserTask) => Promise<void>;
   updateUserTask: (task: UserTask, partial?: Partial<UserTask>) => Promise<void>;
   deleteUserTask: (id: string) => Promise<void>;
+  addFeedback: (feedback: Feedback) => Promise<void>; // [v3.9] 发送留言
+  updateFeedback: (id: string, partial: Partial<Feedback>) => Promise<void>; // [v3.9] 更新留言状态 (如已读)
+  addWeightLog: (log: WeightLog) => Promise<void>; // [v3.9] 记录体征数据
   addUserLog: (clientId: string, log: Omit<FollowUpNote, 'id' | 'client_id' | 'practitioner_id' | 'created_at'>, tags?: string[]) => Promise<void>;
   calibrateInventory: (clientId: string, productId: string, stock: number) => Promise<void>;
   checkConflicts: (clientId: string, protocolId: string) => ConflictRule[]; // 新增：检测冲突逻辑
@@ -67,6 +72,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [importBatches, setImportBatches] = useState<ImportBatch[]>([]); // 新增状态
   const [userTasks, setUserTasks] = useState<UserTask[]>([]); // 新增状态
   const [conflictRules, setConflictRules] = useState<ConflictRule[]>([]); // 新增状态
+  const [feedbacks, setFeedbacks] = useState<Feedback[]>([]); // [v3.9] 留言互动状态
+  const [weightLogs, setWeightLogs] = useState<WeightLog[]>([]); // [v3.9] 体征日志状态
   const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
@@ -81,7 +88,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           cloudIngredients,
           cloudBatches,
           cloudTasks,
-          cloudRules
+          cloudRules,
+          cloudFeedbacks,
+          cloudWeightLogs
         ] = await Promise.all([
           cloud.getCollection<Client>('clients'),
           cloud.getCollection<Product>('products'),
@@ -91,6 +100,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           cloud.getCollection<ImportBatch>('import_batches'),
           cloud.getCollection<UserTask>('user_tasks'),
           cloud.getCollection<ConflictRule>('conflict_rules'),
+          cloud.getCollection<Feedback>('feedbacks'),
+          cloud.getCollection<WeightLog>('weight_logs'),
         ]);
 
         if (cloudClients.length > 0) {
@@ -174,6 +185,20 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           ];
           setConflictRules(defaultRules);
         }
+
+        if (cloudFeedbacks.length > 0) {
+          setFeedbacks(cloudFeedbacks);
+        } else {
+          const stored = localStorage.getItem('hc_feedbacks');
+          setFeedbacks(stored ? JSON.parse(stored) : []);
+        }
+
+        if (cloudWeightLogs.length > 0) {
+          setWeightLogs(cloudWeightLogs);
+        } else {
+          const stored = localStorage.getItem('hc_weight_logs');
+          setWeightLogs(stored ? JSON.parse(stored) : []);
+        }
       } catch (error) {
         console.error('初始化云端数据失败，回退到本地存储:', error);
       } finally {
@@ -212,6 +237,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (isLoaded) localStorage.setItem('hc_user_tasks', JSON.stringify(userTasks));
   }, [userTasks, isLoaded]);
+
+  useEffect(() => {
+    if (isLoaded) localStorage.setItem('hc_feedbacks', JSON.stringify(feedbacks));
+  }, [feedbacks, isLoaded]);
+
+  useEffect(() => {
+    if (isLoaded) localStorage.setItem('hc_weight_logs', JSON.stringify(weightLogs));
+  }, [weightLogs, isLoaded]);
 
   // CRUD Operations with Cloud Sync
   const addClient = async (client: Client) => {
@@ -334,6 +367,21 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const deleteUserTask = async (id: string) => {
     setUserTasks(prev => prev.filter(t => t.id !== id));
     await cloud.deleteItem('user_tasks', id);
+  };
+
+  const addFeedback = async (feedback: Feedback) => {
+    setFeedbacks(prev => [...prev, feedback]);
+    await cloud.addItem('feedbacks', feedback);
+  };
+
+  const updateFeedback = async (id: string, partial: Partial<Feedback>) => {
+    setFeedbacks(prev => prev.map(f => f.id === id ? { ...f, ...partial } : f));
+    await cloud.updateItem('feedbacks', id, partial);
+  };
+
+  const addWeightLog = async (log: WeightLog) => {
+    setWeightLogs(prev => [...prev, log]);
+    await cloud.addItem('weight_logs', log);
   };
 
   const addIngredient = async (ingredient: Ingredient) => {
@@ -503,6 +551,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       importBatches,
       userTasks,
       conflictRules,
+      feedbacks,
+      weightLogs,
       addClient,
       updateClient,
       deleteClient,
@@ -523,6 +573,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       addUserTask,
       updateUserTask,
       deleteUserTask,
+      addFeedback,
+      updateFeedback,
+      addWeightLog,
       addUserLog,
       calibrateInventory,
       checkConflicts

@@ -316,6 +316,7 @@ function DashboardContent() {
         health_goal: d.health_goal,
         source: d.source,
         practitioner_id: 'p-001',
+        slug: Math.random().toString(36).substring(2, 10),
         created_at: new Date().toISOString()
       }));
       bulkAddClients(newClients, batchId);
@@ -344,6 +345,7 @@ function DashboardContent() {
       id: editingClient?.id || `c-${Date.now()}`,
       practitioner_id: 'p-001',
       created_at: editingClient?.created_at || new Date().toISOString(),
+      slug: editingClient?.slug || Math.random().toString(36).substring(2, 10),
       ...editingClient,
       name: formData.get('name') as string,
       phone: formData.get('phone') as string,
@@ -353,7 +355,7 @@ function DashboardContent() {
       weight_kg: Number(formData.get('weight_kg')) || undefined,
       health_goal: formData.get('health_goal') as string,
       source: formData.get('source') as string,
-      conversion_intent: formData.get('conversion_intent') as 'low' | 'medium' | 'high',
+      conversion_intent: (formData.get('conversion_intent') as 'low' | 'medium' | 'high') || 'low',
     };
 
     if (editingClient?.id) {
