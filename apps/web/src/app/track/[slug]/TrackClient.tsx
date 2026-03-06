@@ -1600,7 +1600,7 @@ export default function TrackClient({ slug }: { slug: string }) {
                 退出当前账号
               </button>
               <p className="text-[8px] font-black text-slate-200 uppercase tracking-[0.2em] text-center pt-4">
-                PWA Build: 1.2.0-UPDATE-0306
+                PWA Build: 1.2.1-V14-FINAL
               </p>
             </div>
           </div>

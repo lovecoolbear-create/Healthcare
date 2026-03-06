@@ -108,7 +108,7 @@ export default function LoginPage() {
               数据受 SSL 加密保护 · 仅限授权营养师访问
             </p>
             <p className="text-[8px] font-black text-slate-200 uppercase tracking-widest mt-2">
-              System Version: 1.2.0-FINAL
+              System Version: 1.2.1-V14-FINAL
             </p>
           </div>
         </div>
