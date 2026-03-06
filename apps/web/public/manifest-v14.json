@@ -2,7 +2,7 @@
   "name": "HealthCare Pro V14-FINAL",
   "short_name": "HC Pro V14",
   "description": "数字化调理系统 · 客户专属入口 (V1.2.1-V14-FINAL)",
-  "start_url": "/track/v14-force-sync?v=V14_FORCE_FINAL",
+  "start_url": "/login?v=V14_FINAL_FORCE",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#059669",
