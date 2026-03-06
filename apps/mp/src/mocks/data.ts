@@ -8,8 +8,66 @@ import {
   Ingredient,
   Protocol,
   ClientProtocolInstance,
-  ProtocolTrigger
+  ProtocolTrigger,
+  Feedback,
+  WeightLog
 } from '@healthcare/shared';
+
+// ... (existing code remains same until end of file)
+
+// 10. Mock Feedbacks [v3.9 & v4.0]
+export const mockFeedbacks: Feedback[] = [
+  {
+    id: 'fb-1',
+    client_id: 'client-1',
+    practitioner_id: 'pract-1',
+    content: '今天感觉精力很好，下午没有犯困。',
+    sender_type: 'client',
+    is_read: false,
+    energy_level: 5,
+    sleep_quality: 4,
+    gut_reaction: 'normal',
+    created_at: new Date().toISOString()
+  },
+  {
+    id: 'fb-2',
+    client_id: 'client-2',
+    practitioner_id: 'pract-1',
+    content: '最近有点胀气，不知道是不是益生菌的作用。',
+    sender_type: 'client',
+    is_read: true,
+    energy_level: 3,
+    sleep_quality: 3,
+    gut_reaction: 'bloating',
+    created_at: new Date().toISOString()
+  }
+];
+
+// 11. Mock Weight Logs [v3.9 & v4.0]
+export const mockWeightLogs: WeightLog[] = [
+  {
+    id: 'wl-1',
+    client_id: 'client-1',
+    weight_kg: 78.5,
+    body_fat_percentage: 24.5,
+    visceral_fat_level: 11,
+    muscle_mass_kg: 58.2,
+    is_special_event: false,
+    recorded_at: '2024-03-01T08:00:00Z',
+    source: 'manual'
+  },
+  {
+    id: 'wl-2',
+    client_id: 'client-2',
+    weight_kg: 62.0,
+    body_fat_percentage: 28.5,
+    is_period: true, // 女性客户生理期
+    is_special_event: true, // 标记特殊事件
+    is_anomaly: true, // 生理期数据波动通常标记为异常以便平滑处理
+    recorded_at: '2024-03-01T08:00:00Z',
+    source: 'manual'
+  }
+];
 
 // 1. Mock Ingredients
 export const mockIngredients: Ingredient[] = [
@@ -97,6 +155,7 @@ export const mockClient: Client = {
   loyalty_points: 1250,
   checkin_streak: 5,
   missed_days: 0,
+  protocol_id: 'proto-1',
   slug: 'user-7d2f-4b9e-91a2',
   inventory_status: [
     { product_id: 'p-1', current_stock: 45, remaining_days: 15, last_calibration_date: '2024-03-01' },
@@ -225,6 +284,17 @@ export const mockClients: Client[] = [
     tags: ['高压职业', '经常熬夜'],
     created_at: '2024-02-20',
     missed_days: 3 // 模拟连续 3 天断服
+  },
+  {
+    id: 'client-sync-test',
+    practitioner_id: 'pract-1',
+    name: '同步测试员',
+    avatar_url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sync',
+    phone: '15000000000',
+    gender: 'female',
+    health_baseline: '用于验证 Web 与移动端同步',
+    slug: 'sync-test-v1',
+    created_at: new Date().toISOString()
   }
 ];
 

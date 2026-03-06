@@ -21,6 +21,8 @@ CREATE TABLE clients (
     gender TEXT CHECK (gender IN ('male', 'female', 'other')),
     birthday DATE,
     health_baseline TEXT, -- 初始健康状态描述
+    slug UUID UNIQUE DEFAULT gen_random_uuid(), -- 用于 PWA 访问的唯一 Slug
+    push_subscription TEXT, -- PWA Web Push 订阅信息 (JSON)
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 

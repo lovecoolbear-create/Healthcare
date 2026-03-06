@@ -160,6 +160,47 @@ export class CloudService {
     }
   }
 
+  /**
+   * 通过手机号查找客户 (用于登录验证)
+   */
+  public async findClientByPhone(phone: string): Promise<any | null> {
+    const normalizedPhone = phone.trim();
+    if (!normalizedPhone) return null;
+
+    // 1. 优先从云端查找 (如果已配置)
+    if (this.isConfigured && this.supabase) {
+      try {
+        console.log(`[Cloud] 正在通过手机号查询客户: ${normalizedPhone}...`);
+        const { data, error } = await this.supabase
+          .from('clients')
+          .select('*')
+          .eq('phone', normalizedPhone)
+          .maybeSingle();
+
+        if (error) throw error;
+        
+        if (data) {
+          console.log(`[Cloud] ✅ 云端手机号查询成功: ${data.name}`);
+          return data;
+        }
+      } catch (error: any) {
+        console.error(`[Cloud] ❌ 云端手机号查询失败:`, error.message);
+      }
+    }
+
+    // 2. 降级方案：从本地 localStorage 查找 (包含 Mock 数据)
+    console.log(`[Cloud] ℹ️ 尝试从本地数据查找手机号: ${normalizedPhone}`);
+    const clients = this.getLocal('clients');
+    const localClient = clients.find((c: any) => (c.phone || '').trim() === normalizedPhone);
+    
+    if (localClient) {
+      console.log(`[Cloud] ✅ 本地手机号查询成功: ${localClient.name}`);
+      return localClient;
+    }
+
+    return null;
+  }
+
   // --- Helper Methods ---
 
   private getLocal(collectionName: string): any[] {

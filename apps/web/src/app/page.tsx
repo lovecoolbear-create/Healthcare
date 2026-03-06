@@ -15,6 +15,7 @@ import {
   Package,
   Layers,
   Activity,
+  MessageSquare,
   FileEdit,
   Menu,
   X,
@@ -26,7 +27,8 @@ import {
   CheckCircle2,
   Moon,
   Trash2,
-  Save
+  Save,
+  Link2
 } from 'lucide-react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -341,14 +343,21 @@ function DashboardContent() {
   const handleSaveClient = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
+    const generateSlug = () => {
+      return 'user-' + Math.random().toString(36).substring(2, 6) + '-' + Math.random().toString(36).substring(2, 6);
+    };
+
+    const rawPhone = formData.get('phone') as string;
+    const normalizedPhone = rawPhone.replace(/\s|-|\+86/g, '').trim();
+
     const newClient: Client = {
       id: editingClient?.id || `c-${Date.now()}`,
       practitioner_id: 'p-001',
       created_at: editingClient?.created_at || new Date().toISOString(),
-      slug: editingClient?.slug || Math.random().toString(36).substring(2, 10),
+      slug: editingClient?.slug || generateSlug(),
       ...editingClient,
       name: formData.get('name') as string,
-      phone: formData.get('phone') as string,
+      phone: normalizedPhone,
       gender: (formData.get('gender') as 'male' | 'female' | 'other') || 'female',
       birthday: formData.get('birthday') as string || undefined,
       height_cm: Number(formData.get('height_cm')) || undefined,
@@ -571,8 +580,14 @@ function DashboardContent() {
       c.name.includes(searchQuery) || c.phone?.includes(searchQuery)
     );
     
-    // Sort logic: Highlighted clients (via Action Pool) go to top
+    // Sort logic: Ghosting Level 3 alerts go to absolute top, then Highlighted clients (via Action Pool)
     return baseFiltered.sort((a, b) => {
+      const aIsGhosting = allAlerts.some(alert => alert.id === a.id && alert.alertType === 'ghosting');
+      const bIsGhosting = allAlerts.some(alert => alert.id === b.id && alert.alertType === 'ghosting');
+      
+      if (aIsGhosting && !bIsGhosting) return -1;
+      if (!aIsGhosting && bIsGhosting) return 1;
+
       const aIsHighlighted = allAlerts.some(alert => alert.id === a.id && alert.actionType === 'highlight_client');
       const bIsHighlighted = allAlerts.some(alert => alert.id === b.id && alert.actionType === 'highlight_client');
       
@@ -1058,9 +1073,23 @@ function DashboardContent() {
                             <span className="text-[8px] md:text-[9px] font-black text-slate-300 uppercase tracking-tighter">累计价值 (LTV)</span>
                             <span className="text-xs font-black text-slate-900">¥ {client.loyalty_points ? client.loyalty_points * 10 : 0}</span>
                           </div>
-                          <Link href={`/clients/plan?id=${client.id}`} className="p-2 bg-slate-50 rounded-xl text-slate-400 group-hover:bg-slate-900 group-hover:text-white transition-all">
-                            <ChevronRight className="w-3.5 h-3.5 md:w-4 h-4" />
-                          </Link>
+                          <div className="flex gap-2">
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const trackingUrl = `${window.location.origin}/track/${client.slug}`;
+                                navigator.clipboard.writeText(trackingUrl);
+                                alert(`已复制移动端追踪链接：\n${trackingUrl}`);
+                              }}
+                              className="p-2 bg-slate-50 rounded-xl text-slate-400 hover:bg-emerald-50 hover:text-emerald-600 transition-all"
+                              title="复制移动端链接"
+                            >
+                              <Link2 className="w-3.5 h-3.5" />
+                            </button>
+                            <Link href={`/clients/plan?id=${client.id}`} className="p-2 bg-slate-50 rounded-xl text-slate-400 group-hover:bg-slate-900 group-hover:text-white transition-all">
+                              <ChevronRight className="w-3.5 h-3.5 md:w-4 h-4" />
+                            </Link>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1121,6 +1150,7 @@ function DashboardContent() {
                     {filteredClients.map((client: Client) => {
                       const minRemainingDays = client.inventory_status ? Math.min(...client.inventory_status.map(i => i.remaining_days)) : null;
                       const isHighlighted = allAlerts.some(alert => alert.id === client.id && alert.actionType === 'highlight_client');
+                      const ghostingAlert = allAlerts.find(alert => alert.id === client.id && alert.alertType === 'ghosting');
                       
                       return (
                         <tr 
@@ -1134,6 +1164,7 @@ function DashboardContent() {
                           <td className="px-6 md:px-8 py-4 md:py-5">
                             <div className="flex items-center gap-3">
                               <div className={`w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center font-bold text-xs md:text-sm shrink-0 ${
+                                ghostingAlert ? 'bg-red-600 text-white animate-pulse' :
                                 isHighlighted ? 'bg-rose-200 text-rose-700' : 'bg-emerald-100 text-emerald-700'
                               }`}>
                                 {client.name[0]}
@@ -1141,7 +1172,11 @@ function DashboardContent() {
                               <div className="min-w-0">
                                 <div className="flex items-center gap-2">
                                   <div className="text-xs md:text-sm font-bold text-slate-900 truncate">{client.name}</div>
-                                  {isHighlighted && (
+                                  {ghostingAlert ? (
+                                    <span className="px-1.5 py-0.5 bg-red-600 text-[8px] text-white rounded font-black uppercase tracking-tighter shrink-0 flex items-center gap-1">
+                                      <Zap className="w-2 h-2 fill-current" /> 紧急挽回
+                                    </span>
+                                  ) : isHighlighted && (
                                     <span className="px-1.5 py-0.5 bg-rose-500 text-[8px] text-white rounded font-black uppercase tracking-tighter shrink-0">重点</span>
                                   )}
                                 </div>
@@ -1192,24 +1227,63 @@ function DashboardContent() {
                           </td>
                           <td className="px-6 md:px-8 py-4 md:py-5 text-right">
                             <div className="flex justify-end items-center gap-1 md:gap-4">
-                              <button 
-                                onClick={() => handleEditClient(client)}
-                                className="p-1.5 md:p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-emerald-600 transition-colors"
-                                title="编辑客户档案"
-                              >
-                                <FileEdit className="w-3.5 h-3.5 md:w-4 md:h-4" />
-                              </button>
-                              <button 
-                                onClick={async () => {
-                                  if (window.confirm(`确定要删除客户 ${client.name} 吗？此操作不可撤销。`)) {
-                                    await deleteClient(client.id);
-                                  }
-                                }}
-                                className="p-1.5 md:p-2 hover:bg-rose-50 rounded-full text-slate-400 hover:text-rose-600 transition-colors hidden sm:block"
-                                title="删除客户"
-                              >
-                                <Trash2 className="w-3.5 h-3.5 md:w-4 md:h-4" />
-                              </button>
+                              {ghostingAlert ? (
+                                <>
+                                  <a 
+                                    href={`tel:${client.phone}`}
+                                    className="p-1.5 md:p-2 bg-red-100 text-red-600 rounded-xl hover:bg-red-200 transition-all flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider"
+                                    title="一键拨号"
+                                  >
+                                    <Activity className="w-3.5 h-3.5" />
+                                    拨打
+                                  </a>
+                                  <button 
+                                    onClick={() => {
+                                      const msg = ghostingAlert.actionScript || `你好 ${client.name}，看到你已经几天没更新数据了，是最近太忙了吗？身体调理需要坚持哦，有任何困难随时跟我沟通。`;
+                                      navigator.clipboard.writeText(msg);
+                                      alert('话术已复制，请在微信中粘贴发送给客户。');
+                                      window.open('weixin://', '_blank');
+                                    }}
+                                    className="p-1.5 md:p-2 bg-emerald-100 text-emerald-600 rounded-xl hover:bg-emerald-200 transition-all flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider"
+                                    title="复制话术并打开微信"
+                                  >
+                                    <MessageSquare className="w-3.5 h-3.5" />
+                                    微信
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button 
+                                    onClick={() => {
+                                      const trackingUrl = `${window.location.origin}/track/${client.slug}`;
+                                      navigator.clipboard.writeText(trackingUrl);
+                                      alert(`已复制移动端追踪链接：\n${trackingUrl}\n\n您可以直接粘贴发送给客户。`);
+                                    }}
+                                    className="p-1.5 md:p-2 hover:bg-emerald-50 rounded-full text-slate-400 hover:text-emerald-600 transition-colors"
+                                    title="复制客户移动端链接"
+                                  >
+                                    <Link2 className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                                  </button>
+                                  <button 
+                                    onClick={() => handleEditClient(client)}
+                                    className="p-1.5 md:p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-emerald-600 transition-colors"
+                                    title="编辑客户档案"
+                                  >
+                                    <FileEdit className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                                  </button>
+                                  <button 
+                                    onClick={async () => {
+                                      if (window.confirm(`确定要删除客户 ${client.name} 吗？此操作不可撤销。`)) {
+                                        await deleteClient(client.id);
+                                      }
+                                    }}
+                                    className="p-1.5 md:p-2 hover:bg-rose-50 rounded-full text-slate-400 hover:text-rose-600 transition-colors hidden sm:block"
+                                    title="删除客户"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                                  </button>
+                                </>
+                              )}
                               <Link 
                                 href={`/clients/plan?id=${client.id}`}
                                 className="inline-flex items-center gap-0.5 md:gap-1 text-[10px] md:text-sm font-bold text-emerald-600 hover:text-emerald-700 whitespace-nowrap"

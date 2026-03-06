@@ -2,12 +2,12 @@ import TrackClient from './TrackClient';
 
 export function generateStaticParams() {
   return [
-    { slug: 'client-1' },
-    { slug: 'client-2' },
-    { slug: 'client-3' },
+    { slug: 'user-7d2f-4b9e-91a2' },
+    { slug: 'test-slug' },
+    { slug: 'sync-test-v1' }
   ];
 }
 
-export default function TrackPage({ params }: { params: { slug: string } }) {
+export default function TrackSlugPage({ params }: { params: { slug: string } }) {
   return <TrackClient slug={params.slug} />;
 }

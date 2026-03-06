@@ -6,9 +6,11 @@ import {
   mockProducts, 
   mockGlobalTriggers, 
   mockProtocol,
-  mockIngredients
+  mockIngredients,
+  mockFeedbacks,
+  mockWeightLogs
 } from '../../../mp/src/mocks/data';
-import { Client, Product, Protocol, ProtocolTrigger, Ingredient, FollowUpNote, ConflictRule, UserTask, Feedback, WeightLog } from '@healthcare/shared';
+import { Client, Product, Protocol, ProtocolTrigger, Ingredient, FollowUpNote, ConflictRule, UserTask, Feedback, WeightLog, CheckinLog } from '@healthcare/shared';
 import { cloud } from '../services/cloud';
 
 // --- 类型定义 ---
@@ -32,6 +34,8 @@ interface DataContextType {
   conflictRules: ConflictRule[]; // 新增：冲突规则库
   feedbacks: Feedback[]; // [v3.9] 留言互动数据
   weightLogs: WeightLog[]; // [v3.9] 体征日志数据
+  checkinLogs: CheckinLog[]; // [v4.0] 打卡日志数据
+  setClients: React.Dispatch<React.SetStateAction<Client[]>>; // 新增：供特殊场景手动更新
   addClient: (client: Client) => Promise<void>;
   updateClient: (client: Client, partial?: Partial<Client>) => Promise<void>;
   deleteClient: (id: string) => Promise<void>;
@@ -55,159 +59,151 @@ interface DataContextType {
   addFeedback: (feedback: Feedback) => Promise<void>; // [v3.9] 发送留言
   updateFeedback: (id: string, partial: Partial<Feedback>) => Promise<void>; // [v3.9] 更新留言状态 (如已读)
   addWeightLog: (log: WeightLog) => Promise<void>; // [v3.9] 记录体征数据
+  addHealthMetric: (metric: any) => Promise<void>; // 新增：健康指标同步
+  addCheckinLog: (log: CheckinLog) => Promise<void>; // [v4.0] 添加打卡记录
+  deleteCheckinLog: (id: string) => Promise<void>; // [v4.0] 删除打卡记录 (撤销)
   addUserLog: (clientId: string, log: Omit<FollowUpNote, 'id' | 'client_id' | 'practitioner_id' | 'created_at'>, tags?: string[]) => Promise<void>;
   calibrateInventory: (clientId: string, productId: string, stock: number) => Promise<void>;
   checkConflicts: (clientId: string, protocolId: string) => ConflictRule[]; // 新增：检测冲突逻辑
+  refreshData: () => Promise<void>; // 新增：刷新数据
+  isLoaded: boolean; // 新增：加载状态
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
 
 export function DataProvider({ children }: { children: React.ReactNode }) {
   // Initialize state with lazy initialization to access localStorage only on client
+  // 1. 状态初始化：必须保证服务端和客户端渲染的首帧完全一致，否则 Hydration 会失败导致按钮点不动
+  const [isLoaded, setIsLoaded] = useState(false);
   const [clients, setClients] = useState<Client[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [triggers, setTriggers] = useState<ProtocolTrigger[]>([]);
   const [protocols, setProtocols] = useState<Protocol[]>([]);
-  const [ingredients, setIngredients] = useState<Ingredient[]>([]); // 新增状态
-  const [importBatches, setImportBatches] = useState<ImportBatch[]>([]); // 新增状态
-  const [userTasks, setUserTasks] = useState<UserTask[]>([]); // 新增状态
-  const [conflictRules, setConflictRules] = useState<ConflictRule[]>([]); // 新增状态
-  const [feedbacks, setFeedbacks] = useState<Feedback[]>([]); // [v3.9] 留言互动状态
-  const [weightLogs, setWeightLogs] = useState<WeightLog[]>([]); // [v3.9] 体征日志状态
-  const [isLoaded, setIsLoaded] = useState(false);
+  const [ingredients, setIngredients] = useState<Ingredient[]>([]);
+  const [importBatches, setImportBatches] = useState<ImportBatch[]>([]);
+  const [userTasks, setUserTasks] = useState<UserTask[]>([]);
+  const [conflictRules, setConflictRules] = useState<ConflictRule[]>([]);
+  const [feedbacks, setFeedbacks] = useState<Feedback[]>([]);
+  const [weightLogs, setWeightLogs] = useState<WeightLog[]>([]);
+  const [checkinLogs, setCheckinLogs] = useState<CheckinLog[]>([]);
+
+  // 2. 初始化数据逻辑
+  const initData = async () => {
+    console.log('[Step 1] initData 开始执行');
+    
+    try {
+      // [断腕操作] 按要求跳过本地存储读取，直接进入云端同步流程
+      console.log('[Step 2] 跳过本地存储，强制使用 Mock/云端');
+      
+      setClients(mockClients);
+      setProducts(mockProducts);
+      setTriggers(mockGlobalTriggers);
+      setProtocols([mockProtocol]);
+      setIngredients(mockIngredients);
+      setFeedbacks(mockFeedbacks);
+      setWeightLogs(mockWeightLogs);
+      setUserTasks([]);
+      setImportBatches([]);
+      setCheckinLogs([]);
+
+      // [核心修复] 将 Mock 数据同步到 localStorage，确保 cloud.findClientByPhone 能查到
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('hc_clients', JSON.stringify(mockClients));
+        localStorage.setItem('hc_products', JSON.stringify(mockProducts));
+        localStorage.setItem('hc_feedbacks', JSON.stringify(mockFeedbacks));
+      }
+
+      console.log('[Step 3] 初始 Mock 数据载入完成并同步至本地');
+    } catch (e: any) {
+      console.error(`[Error] ${e.message}`);
+    } finally {
+      console.log('[Step 4] 强制进入应用');
+      setIsLoaded(true);
+    }
+
+    // 3. 后台同步逻辑 (现在改为立即同步)
+    console.log('[Data] 正在同步云端数据...');
+    try {
+      console.log('[Sync] 启动后台云端同步');
+      const withTimeout = async (promise: Promise<any>) => {
+        const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000));
+        return Promise.race([promise, timeout]);
+      };
+
+      const fetchPromises = [
+        withTimeout(cloud.getCollection<Client>('clients')),
+        withTimeout(cloud.getCollection<Product>('products')),
+        withTimeout(cloud.getCollection<ProtocolTrigger>('triggers')),
+        withTimeout(cloud.getCollection<Protocol>('protocols')),
+        withTimeout(cloud.getCollection<Ingredient>('ingredients')),
+        withTimeout(cloud.getCollection<ImportBatch>('import_batches')),
+        withTimeout(cloud.getCollection<UserTask>('user_tasks')),
+        withTimeout(cloud.getCollection<ConflictRule>('conflict_rules')),
+        withTimeout(cloud.getCollection<Feedback>('feedbacks')),
+        withTimeout(cloud.getCollection<WeightLog>('weight_logs')),
+        withTimeout(cloud.getCollection<CheckinLog>('checkin_logs')),
+      ];
+
+      const results = await Promise.allSettled(fetchPromises);
+      
+      const keys = [
+        'hc_clients', 'hc_products', 'hc_triggers', 'hc_protocols', 
+        'hc_ingredients', 'hc_import_batches', 'hc_user_tasks', 
+        'hc_conflict_rules', 'hc_feedbacks', 'hc_weight_logs', 'hc_checkin_logs'
+      ];
+      const setters = [
+        setClients, setProducts, setTriggers, setProtocols, 
+        setIngredients, setImportBatches, setUserTasks, 
+        setConflictRules, setFeedbacks, setWeightLogs, setCheckinLogs
+      ];
+
+      results.forEach((res, i) => {
+        if (res.status === 'fulfilled' && res.value && Array.isArray(res.value) && res.value.length > 0) {
+          setters[i](res.value);
+          localStorage.setItem(keys[i], JSON.stringify(res.value));
+        }
+      });
+      console.log('[Data] ✅ 后台同步完成');
+    } catch (err) {
+      console.log('[Data] 后台同步失败 (非阻塞):', err);
+    }
+  };
 
   useEffect(() => {
-    const initData = async () => {
-      // 优先从云端加载，云端不可用则回退到 localStorage 或 Mock
-      try {
-        const [
-          cloudClients, 
-          cloudProducts, 
-          cloudTriggers, 
-          cloudProtocols,
-          cloudIngredients,
-          cloudBatches,
-          cloudTasks,
-          cloudRules,
-          cloudFeedbacks,
-          cloudWeightLogs
-        ] = await Promise.all([
-          cloud.getCollection<Client>('clients'),
-          cloud.getCollection<Product>('products'),
-          cloud.getCollection<ProtocolTrigger>('triggers'),
-          cloud.getCollection<Protocol>('protocols'),
-          cloud.getCollection<Ingredient>('ingredients'),
-          cloud.getCollection<ImportBatch>('import_batches'),
-          cloud.getCollection<UserTask>('user_tasks'),
-          cloud.getCollection<ConflictRule>('conflict_rules'),
-          cloud.getCollection<Feedback>('feedbacks'),
-          cloud.getCollection<WeightLog>('weight_logs'),
-        ]);
+    console.log('[System] useEffect 触发');
+    
+    // 如果是 PWA 或者有旧数据，立即尝试放行
+    const isStandalone = typeof window !== 'undefined' && (
+      (window.navigator as any).standalone || 
+      window.matchMedia('(display-mode: standalone)').matches
+    );
+    const hasData = typeof window !== 'undefined' && !!localStorage.getItem('hc_clients');
 
-        if (cloudClients.length > 0) {
-          setClients(cloudClients);
-        } else {
-          const stored = localStorage.getItem('hc_clients');
-          setClients(stored ? JSON.parse(stored) : mockClients);
-        }
+    if (isStandalone || hasData) {
+      console.log('[System] 检测到 PWA/本地数据，加速开屏');
+      setIsLoaded(true);
+    }
 
-        if (cloudProducts.length > 0) {
-          setProducts(cloudProducts);
-        } else {
-          const stored = localStorage.getItem('hc_products');
-          setProducts(stored ? JSON.parse(stored) : mockProducts);
-        }
+    const timer = setTimeout(() => {
+      initData();
+    }, 50);
 
-        if (cloudTriggers.length > 0) {
-          setTriggers(cloudTriggers);
-        } else {
-          const stored = localStorage.getItem('hc_triggers');
-          setTriggers(stored ? JSON.parse(stored) : mockGlobalTriggers);
-        }
+    // 终极兜底：无论如何，3秒后必须关闭全屏加载状态（如果还有的话）
+    const safetyTimer = setTimeout(() => {
+      setIsLoaded(true);
+      console.log('[System] 触发 3s 终极兜底放行');
+    }, 3000);
 
-        if (cloudProtocols.length > 0) {
-          setProtocols(cloudProtocols);
-        } else {
-          const stored = localStorage.getItem('hc_protocols');
-          setProtocols(stored ? JSON.parse(stored) : [mockProtocol]);
-        }
-
-        if (cloudIngredients.length > 0) {
-          setIngredients(cloudIngredients);
-        } else {
-          const stored = localStorage.getItem('hc_ingredients');
-          setIngredients(stored ? JSON.parse(stored) : mockIngredients);
-        }
-
-        if (cloudBatches.length > 0) {
-          setImportBatches(cloudBatches);
-        } else {
-          const stored = localStorage.getItem('hc_import_batches');
-          setImportBatches(stored ? JSON.parse(stored) : []);
-        }
-
-        if (cloudTasks.length > 0) {
-          setUserTasks(cloudTasks);
-        } else {
-          const stored = localStorage.getItem('hc_user_tasks');
-          setUserTasks(stored ? JSON.parse(stored) : []);
-        }
-
-        if (cloudRules.length > 0) {
-          setConflictRules(cloudRules);
-        } else {
-          // 默认内置核心冲突规则 (知识库闭环)
-          const defaultRules: ConflictRule[] = [
-            {
-              id: 'rule-1',
-              medication_keyword: '华法林',
-              ingredient_keyword: '辅酶 Q10',
-              severity: 'high',
-              description: '辅酶 Q10 具有微弱的凝血作用，可能拮抗华法林的抗凝效果，增加血栓风险。',
-              suggestion: '建议停用辅酶 Q10 或在医生监测下严密监测 INR 指标。'
-            },
-            {
-              id: 'rule-2',
-              medication_keyword: '二甲双胍',
-              ingredient_keyword: '维生素 B12',
-              severity: 'medium',
-              description: '二甲双胍可能影响回肠对维生素 B12 的吸收，导致长期缺乏。',
-              suggestion: '建议长期服用二甲双胍的客户额外补充维生素 B12。'
-            },
-            {
-              id: 'rule-3',
-              medication_keyword: '他汀',
-              ingredient_keyword: '辅酶 Q10',
-              severity: 'low',
-              description: '他汀类药物通过阻断甲羟戊酸途径，不仅抑制胆固醇合成，也抑制辅酶 Q10 的合成，可能导致肌痛。',
-              suggestion: '强烈建议服用他汀类药物的客户补充辅酶 Q10 (100-200mg/天)。'
-            }
-          ];
-          setConflictRules(defaultRules);
-        }
-
-        if (cloudFeedbacks.length > 0) {
-          setFeedbacks(cloudFeedbacks);
-        } else {
-          const stored = localStorage.getItem('hc_feedbacks');
-          setFeedbacks(stored ? JSON.parse(stored) : []);
-        }
-
-        if (cloudWeightLogs.length > 0) {
-          setWeightLogs(cloudWeightLogs);
-        } else {
-          const stored = localStorage.getItem('hc_weight_logs');
-          setWeightLogs(stored ? JSON.parse(stored) : []);
-        }
-      } catch (error) {
-        console.error('初始化云端数据失败，回退到本地存储:', error);
-      } finally {
-        setIsLoaded(true);
-      }
+    return () => {
+      clearTimeout(timer);
+      clearTimeout(safetyTimer);
     };
-
-    initData();
   }, []);
+
+  const refreshData = async () => {
+    setIsLoaded(false);
+    await initData();
+  };
 
   // 状态变更时仅保存到 localStorage 作为备份（云端同步已移至操作函数内部）
   useEffect(() => {
@@ -245,6 +241,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (isLoaded) localStorage.setItem('hc_weight_logs', JSON.stringify(weightLogs));
   }, [weightLogs, isLoaded]);
+
+  useEffect(() => {
+    if (isLoaded) localStorage.setItem('hc_checkin_logs', JSON.stringify(checkinLogs));
+  }, [checkinLogs, isLoaded]);
 
   // CRUD Operations with Cloud Sync
   const addClient = async (client: Client) => {
@@ -382,6 +382,57 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const addWeightLog = async (log: WeightLog) => {
     setWeightLogs(prev => [...prev, log]);
     await cloud.addItem('weight_logs', log);
+  };
+
+  const addHealthMetric = async (metric: any) => {
+    // 同时也存入 weight_logs 以保持兼容性，如果它是一个体重指标
+    if (metric.metric_type === 'Weight') {
+      const weightLog: WeightLog = {
+        id: metric.id,
+        client_id: metric.client_id,
+        weight_kg: metric.metric_value,
+        recorded_at: metric.recorded_at || new Date().toISOString(),
+        source: 'manual'
+      };
+      setWeightLogs(prev => [...prev, weightLog]);
+    }
+    // 同步到云端 health_metrics 表
+    await cloud.addItem('health_metrics', metric);
+  };
+
+  const addCheckinLog = async (log: CheckinLog) => {
+    setCheckinLogs(prev => [...prev, log]);
+    await cloud.addItem('checkin_logs', log);
+    
+    // 联动逻辑：打卡成功后，自动扣减客户库存
+    const client = clients.find(c => c.id === log.client_id);
+    if (client && log.product_id) {
+      const currentInventory = client.inventory_status || [];
+      const item = currentInventory.find(i => i.product_id === log.product_id);
+      if (item) {
+        // 简单扣减：假设每次打卡消耗 1 个单位（实际应根据 action.dosage_per_time 计算）
+        // 这里先做简单处理，后续在业务层可以传入更精确的扣减值
+        await calibrateInventory(log.client_id, log.product_id, Math.max(0, item.current_stock - 1));
+      }
+    }
+  };
+
+  const deleteCheckinLog = async (id: string) => {
+    const logToDelete = checkinLogs.find(l => l.id === id);
+    setCheckinLogs(prev => prev.filter(l => l.id !== id));
+    await cloud.deleteItem('checkin_logs', id);
+
+    // 联动逻辑：撤销打卡后，自动回退客户库存
+    if (logToDelete && logToDelete.client_id && logToDelete.product_id) {
+      const client = clients.find(c => c.id === logToDelete.client_id);
+      if (client) {
+        const currentInventory = client.inventory_status || [];
+        const item = currentInventory.find(i => i.product_id === logToDelete.product_id);
+        if (item) {
+          await calibrateInventory(logToDelete.client_id, logToDelete.product_id, item.current_stock + 1);
+        }
+      }
+    }
   };
 
   const addIngredient = async (ingredient: Ingredient) => {
@@ -537,52 +588,71 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     await cloud.deleteItem('import_batches', batchId);
   };
 
-  if (!isLoaded) {
-    return null; // or a loading spinner
-  }
-
-  return (
-    <DataContext.Provider value={{ 
-      clients, 
-      products, 
-      triggers, 
-      protocols, 
-      ingredients,
-      importBatches,
-      userTasks,
-      conflictRules,
-      feedbacks,
-      weightLogs,
-      addClient,
-      updateClient,
-      deleteClient,
-      addProduct,
-      updateProduct,
-      deleteProduct,
-      addIngredient,
-      bulkAddClients,
-      bulkAddProducts,
-      rollbackBatch,
-      addTrigger,
-      updateTrigger,
-      deleteTrigger,
-      addProtocol,
-      updateProtocol,
-      deleteProtocol,
-      cleanEmptyProtocols,
-      addUserTask,
-      updateUserTask,
-      deleteUserTask,
-      addFeedback,
-      updateFeedback,
-      addWeightLog,
-      addUserLog,
-      calibrateInventory,
-      checkConflicts
-    }}>
-      {children}
-    </DataContext.Provider>
-  );
+    if (!isLoaded) {
+      // 在加载期间也渲染 children，确保页面内容可见
+      // 加载层作为 Overlay 存在
+    }
+  
+    return (
+      <DataContext.Provider
+        value={{
+          clients,
+          products,
+          triggers,
+          protocols,
+          ingredients,
+          importBatches,
+          userTasks,
+          conflictRules,
+          feedbacks,
+          weightLogs,
+    checkinLogs,
+    setClients,
+    addClient,
+    updateClient,
+          deleteClient,
+          addProduct,
+          updateProduct,
+          deleteProduct,
+          bulkAddClients,
+          bulkAddProducts,
+          rollbackBatch,
+          addTrigger,
+          updateTrigger,
+          deleteTrigger,
+          addProtocol,
+          updateProtocol,
+          deleteProtocol,
+          cleanEmptyProtocols,
+          addUserTask,
+          updateUserTask,
+          deleteUserTask,
+          addFeedback,
+          updateFeedback,
+          addWeightLog,
+          addHealthMetric,
+          addCheckinLog,
+          deleteCheckinLog,
+          addIngredient,
+          addUserLog,
+          calibrateInventory,
+          checkConflicts,
+          refreshData,
+          isLoaded,
+        }}
+      >
+        {/* 彻底移除 Overlay 覆盖层，改用极简的绝对定位提示，且不阻断交互 */}
+        {!isLoaded && (
+          <div className="fixed top-4 right-4 z-[9999] pointer-events-none">
+            <div className="bg-slate-900/80 text-white text-[10px] px-3 py-2 rounded-full flex items-center gap-2 shadow-lg backdrop-blur-sm">
+              <div className="w-2 h-2 border border-white/30 border-t-white rounded-full animate-spin" />
+              正在同步数据...
+            </div>
+          </div>
+        )}
+        {children}
+      </DataContext.Provider>
+    );
 }
 
 export const useData = () => {

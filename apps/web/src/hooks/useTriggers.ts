@@ -19,6 +19,7 @@ const SILENT_PERIOD_MS = 48 * 60 * 60 * 1000; // 48 小时静默期
 
 export const ALERT_GROUPS = {
   'urgent': { label: '紧急干预', icon: Zap, color: 'text-rose-500', bg: 'bg-rose-50' },
+  'ghosting': { label: '失联挽回', icon: Zap, color: 'text-red-600', bg: 'bg-red-50' },
   'inventory': { label: '补货转化', icon: Package, color: 'text-orange-500', bg: 'bg-orange-50' },
   'followup': { label: '常规随访', icon: Calendar, color: 'text-blue-500', bg: 'bg-blue-50' },
   'growth': { label: '关系维护', icon: TrendingUp, color: 'text-emerald-500', bg: 'bg-emerald-50' },
@@ -41,6 +42,54 @@ export function useTriggers(isSilentRuleEnabled: boolean = true) {
     clients.forEach(client => {
       const clientPotentialAlerts: Alert[] = [];
       
+      // --- 1. 自动化失联唤醒 (Ghosting Prevention Logic) ---
+      if (client.missed_days && client.missed_days > 0) {
+        if (client.missed_days >= 3) { // Level 3: 72h+
+          clientPotentialAlerts.push({
+            ...client,
+            alertType: 'ghosting',
+            alertMsg: `🔴 紧急挽回：已连续 ${client.missed_days} 天无数据`,
+            priority: 'critical',
+            actionLabel: '一键拨号/微信',
+            actionScript: `你好 ${client.name}，看到你已经几天没更新数据了，是最近太忙了吗？身体调理需要坚持哦，有任何困难随时跟我沟通。`,
+            actionType: 'highlight_client'
+          });
+        } else if (client.missed_days >= 2) { // Level 2: 48h
+          clientPotentialAlerts.push({
+            ...client,
+            alertType: 'ghosting',
+            alertMsg: `失联预警：已连续 ${client.missed_days} 天无数据`,
+            priority: 'high',
+            actionLabel: 'Web Push 推送',
+            actionScript: `[HealthCare] 您的专属营养师正在关注您的进度，记得同步今日数据。`,
+            actionType: 'send_template'
+          });
+        } else if (client.missed_days >= 1) { // Level 1: 24h
+          clientPotentialAlerts.push({
+            ...client,
+            alertType: 'ghosting',
+            alertMsg: `温馨问候模式：24h 无数据`,
+            priority: 'medium',
+            actionLabel: 'Banner 切换',
+            actionScript: `今天忙坏了吧？记得按时补充营养哦`,
+            actionType: 'push_red_dot'
+          });
+        }
+      }
+
+      // --- 2. 社交货币生成器 (Achievement Triggers for Nutritionist) ---
+      if (client.checkin_streak && [7, 14, 21].includes(client.checkin_streak)) {
+        clientPotentialAlerts.push({
+          ...client,
+          alertType: 'growth',
+          alertMsg: `🎉 达成 ${client.checkin_streak} 天打卡里程碑！`,
+          priority: 'low',
+          actionLabel: '发送贺报',
+          actionScript: `太棒了 ${client.name}！你已经连续坚持了 ${client.checkin_streak} 天，这是非常了不起的成就！`,
+          actionType: 'send_template'
+        });
+      }
+
       triggers.filter(t => t.is_enabled).forEach(trigger => {
         let isTriggered = false;
         let alertMsg = '';

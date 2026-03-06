@@ -95,6 +95,7 @@ export interface Client {
   status_label?: string; // [v3.9] 手动标注的客户状态 (如: "减脂中", "动力下降")
   
   slug: string; // URL 混淆 Slug (Random UUID for client access)
+  push_subscription?: string; // PWA Web Push Subscription (JSON string)
   
   created_at: string;
 }
@@ -334,9 +335,13 @@ export interface ClientGoal {
 export interface CheckinLog {
   id: string;
   client_id: string;
-  time_slot: string;
+  time_slot: string; // morning, noon, evening, etc.
+  slot_id: string;   // v4.0 幂等性标识 (格式: YYYY-MM-DD:slot_name, 如 2024-03-05:morning)
+  action_id?: string; // v4.0 关联的方案动作 ID
+  product_id?: string; // v4.0 关联的产品 ID
+  is_taken: boolean;  // v4.0 是否已服用
   taken_at: string;
-  energy_score?: number; // 1-10
+  energy_score?: number; // 1-10 (Legacy)
   is_auto_checkin: boolean;
 }
 
@@ -370,6 +375,12 @@ export interface Feedback {
   content: string;
   sender_type: 'client' | 'practitioner';
   is_read: boolean;
+  
+  // v4.0 Subjective Feedback
+  energy_level?: 1 | 2 | 3 | 4 | 5;
+  sleep_quality?: 1 | 2 | 3 | 4 | 5;
+  gut_reaction?: 'normal' | 'bloating' | 'diarrhea' | 'constipation';
+  
   created_at: string;
 }
 
@@ -378,6 +389,33 @@ export interface WeightLog {
   client_id: string;
   weight_kg: number;
   body_fat_percentage?: number; // 体脂率 (%)
+  
+  // v4.0 Physiological Metrics
+  visceral_fat_level?: number; // 内脏脂肪等级
+  muscle_mass_kg?: number;     // 肌肉量 (kg)
+  is_period?: boolean;         // 生理期标记 (仅女性)
+  is_special_event?: boolean;  // 特殊事件标记 (大餐、熬夜、生病等)
+  is_anomaly?: boolean;        // 异常数据标记 (系统自动判定或手动确认)
+  
   recorded_at: string;
   source: 'manual' | 'report' | 'device';
+}
+
+/**
+ * [v4.0] 客户端 H5 每日上报聚合结构 (用于 API 提交)
+ */
+export interface ClientDailyReport {
+  client_id: string;
+  report_date: string;
+  compliance: {
+    supplements: Array<{
+      action_id: string;
+      product_id: string;
+      is_taken: boolean;
+      consumed_at: string;
+    }>;
+    water_intake_ml: number;
+  };
+  feedback: Partial<Feedback>;
+  metrics: Partial<WeightLog>;
 }
