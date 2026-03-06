@@ -57,7 +57,7 @@ export default function TrackClient({ slug }: { slug: string }) {
     calibrateInventory
   } = useData();
 
-  const APP_VERSION = 'v1.2.1-V14';
+  const APP_VERSION = 'v1.2.1-V14-FINAL';
   
   // 强制版本校验逻辑
   useEffect(() => {

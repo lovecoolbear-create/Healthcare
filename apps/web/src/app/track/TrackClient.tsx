@@ -30,7 +30,7 @@ export default function TrackClient() {
   const [loginPhone, setLoginPhone] = useState('');
   const [loginError, setLoginError] = useState('');
   const [isLoginLoading, setIsLoginLoading] = useState(false);
-  const APP_VERSION = 'v1.2.0-FINAL-V5';
+  const APP_VERSION = 'v1.2.1-V14-FINAL';
   
   // 强制版本校验逻辑：如果当前版本与代码中的版本不符，强制刷新一次
   useEffect(() => {
