@@ -868,12 +868,42 @@ export default function TrackClient({ slug }: { slug: string }) {
               <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
               <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
             </div>
+          {/* 底部版本信息与强制刷新 */}
+            <div className="mt-12 mb-8 text-center space-y-2">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 border border-slate-200">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                  Version 1.2.0 (FINAL-V5)
+                </span>
+              </div>
+              <button 
+                onClick={() => {
+                  if (confirm('确定要强制刷新并清除缓存吗？这通常能解决界面显示旧版的问题。')) {
+                    if ('serviceWorker' in navigator) {
+                      navigator.serviceWorker.getRegistrations().then(registrations => {
+                        for (let registration of registrations) registration.unregister();
+                      });
+                    }
+                    if ('caches' in window) {
+                      caches.keys().then(names => {
+                        for (let name of names) caches.delete(name);
+                      });
+                    }
+                    localStorage.clear();
+                    window.location.reload(true);
+                  }
+                }}
+                className="block w-full text-[10px] font-black text-emerald-600/50 uppercase tracking-widest hover:text-emerald-600 transition-colors"
+              >
+                界面显示异常？点击强制刷新
+              </button>
+            </div>
           </div>
         </div>
       </div>
-    );
-  }
-
+    </div>
+  );
+}
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-32 select-none touch-manipulation overflow-x-hidden">
       {/* 装饰性背景 (统一为 Web 端翡翠绿装饰) */}
@@ -1369,6 +1399,37 @@ export default function TrackClient({ slug }: { slug: string }) {
                   请完成上方所有打卡项后点击同步
                 </p>
               )}
+            </div>
+
+            {/* 底部版本信息与强制刷新 */}
+            <div className="mt-12 mb-8 text-center space-y-2">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 border border-slate-200">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                  Version 1.2.0 (FINAL-V5)
+                </span>
+              </div>
+              <button 
+                onClick={() => {
+                  if (confirm('确定要强制刷新并清除缓存吗？这通常能解决界面显示旧版的问题。')) {
+                    if ('serviceWorker' in navigator) {
+                      navigator.serviceWorker.getRegistrations().then(registrations => {
+                        for (let registration of registrations) registration.unregister();
+                      });
+                    }
+                    if ('caches' in window) {
+                      caches.keys().then(names => {
+                        for (let name of names) caches.delete(name);
+                      });
+                    }
+                    localStorage.clear();
+                    window.location.reload();
+                  }
+                }}
+                className="block w-full text-[10px] font-black text-emerald-600/50 uppercase tracking-widest hover:text-emerald-600 transition-colors"
+              >
+                界面显示异常？点击强制刷新
+              </button>
             </div>
           </div>
         )}
