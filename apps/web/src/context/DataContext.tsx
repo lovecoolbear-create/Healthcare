@@ -97,7 +97,49 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       
       setClients(mockClients);
       setProducts(mockProducts);
-      setTriggers(mockGlobalTriggers);
+      
+      // [强制注入] 确保积分奖励规则存在，即使 mockGlobalTriggers 中没有
+      const pointRules: ProtocolTrigger[] = [
+        {
+          id: 'trig-9',
+          category: 'points',
+          name: '基础打卡奖励',
+          description: '每日坚持的动力',
+          condition: { type: 'adherence_streak', threshold: 1 },
+          action: { type: 'push_red_dot', priority: 'low', label: '【积分入账】', payload_template: '1' },
+          is_enabled: true,
+          updated_at: new Date().toISOString()
+        },
+        {
+          id: 'trig-10',
+          category: 'points',
+          name: '连续 3 天额外奖励',
+          description: '建立初步习惯',
+          condition: { type: 'adherence_streak', threshold: 3 },
+          action: { type: 'push_red_dot', priority: 'low', label: '【额外积分】', payload_template: '1' },
+          is_enabled: true,
+          updated_at: new Date().toISOString()
+        },
+        {
+          id: 'trig-11',
+          category: 'points',
+          name: '连续 7 天大奖',
+          description: '达成首周目标',
+          condition: { type: 'adherence_streak', threshold: 7 },
+          action: { type: 'push_red_dot', priority: 'medium', label: '【里程碑大奖】', payload_template: '2' },
+          is_enabled: true,
+          updated_at: new Date().toISOString()
+        }
+      ];
+
+      const allTriggers = [...mockGlobalTriggers];
+      pointRules.forEach(rule => {
+        if (!allTriggers.find(t => t.id === rule.id)) {
+          allTriggers.push(rule);
+        }
+      });
+
+      setTriggers(allTriggers);
       setProtocols([mockProtocol]);
       setIngredients(mockIngredients);
       setFeedbacks(mockFeedbacks);

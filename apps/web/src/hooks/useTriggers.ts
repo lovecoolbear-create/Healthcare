@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { Client, ProtocolTrigger, Product, UserTask } from '@healthcare/shared';
 import { useData } from '../context/DataContext';
-import { Zap, Package, Calendar, TrendingUp, ShieldCheck } from 'lucide-react';
+import { Zap, Package, Calendar, TrendingUp, ShieldCheck, Award } from 'lucide-react';
 
 export interface Alert extends Client {
   alertType: string;
@@ -23,6 +23,7 @@ export const ALERT_GROUPS = {
   'inventory': { label: '补货转化', icon: Package, color: 'text-orange-500', bg: 'bg-orange-50' },
   'followup': { label: '常规随访', icon: Calendar, color: 'text-blue-500', bg: 'bg-blue-50' },
   'growth': { label: '关系维护', icon: TrendingUp, color: 'text-emerald-500', bg: 'bg-emerald-50' },
+  'points': { label: '积分奖励', icon: Award, color: 'text-amber-500', bg: 'bg-amber-50' },
   'sop': { label: '标准随访', icon: ShieldCheck, color: 'text-slate-500', bg: 'bg-slate-50' }
 };
 
@@ -172,6 +173,7 @@ export function useTriggers(isSilentRuleEnabled: boolean = true) {
           if (trigger.category === 'inventory') category = 'inventory';
           if (trigger.category === 'symptom' || action.priority === 'critical') category = 'urgent';
           if (trigger.category === 'growth') category = 'growth';
+          if (trigger.category === 'points') category = 'points';
 
           let finalActionMsg = action.payload_template
             .replace(/\{\{client_name\}\}/g, client.name)

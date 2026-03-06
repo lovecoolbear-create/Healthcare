@@ -29,6 +29,7 @@ export default function TrackClient() {
   const [loginPhone, setLoginPhone] = useState('');
   const [loginError, setLoginError] = useState('');
   const [isLoginLoading, setIsLoginLoading] = useState(false);
+  const APP_VERSION = 'v1.0.5';
   
   // 业务状态
   const [activeTab, setActiveTab] = useState<'today' | 'trends' | 'messages' | 'me'>('today');
@@ -225,28 +226,12 @@ export default function TrackClient() {
   }, [getSlotTasks]);
 
   const isVitalsCompleted = useMemo(() => {
-    // 允许 0 或 0.0，只要不是空字符串。增加日志以便调试
-    const isCompleted = !!(dailyVitals.weight && dailyVitals.bodyFat !== '' && dailyVitals.muscleMass !== '' && dailyVitals.visceralFat !== '');
-    console.log('[Track] 健康数据完成状态检查:', { 
-      weight: dailyVitals.weight, 
-      bodyFat: dailyVitals.bodyFat, 
-      muscleMass: dailyVitals.muscleMass, 
-      visceralFat: dailyVitals.visceralFat,
-      isCompleted 
-    });
-    return isCompleted;
+    // 允许 0 或 0.0，只要不是空字符串
+    return !!(dailyVitals.weight && dailyVitals.bodyFat !== '' && dailyVitals.muscleMass !== '' && dailyVitals.visceralFat !== '');
   }, [dailyVitals]);
 
   const isFeedbackCompleted = useMemo(() => {
-    const isCompleted = dailyFeedback.mood > 0 && dailyFeedback.energy > 0 && dailyFeedback.sleep > 0 && dailyFeedback.bowel > 0;
-    console.log('[Track] 体感反馈完成状态检查:', { 
-      mood: dailyFeedback.mood, 
-      energy: dailyFeedback.energy, 
-      sleep: dailyFeedback.sleep, 
-      bowel: dailyFeedback.bowel,
-      isCompleted 
-    });
-    return isCompleted;
+    return dailyFeedback.mood > 0 && dailyFeedback.energy > 0 && dailyFeedback.sleep > 0 && dailyFeedback.bowel > 0;
   }, [dailyFeedback]);
 
   // 核心业务逻辑：当输入变化时，重置同步状态
@@ -260,38 +245,33 @@ export default function TrackClient() {
     }
   }, [dailyVitals, dailyFeedback, waterIntake]);
 
-  // 自动折叠逻辑：健康计划
+  // 自动折叠逻辑：填写完成即折叠 (独立处理)
+  const lastPlanStatus = useRef(isPlanCompleted);
   useEffect(() => {
-    if (isPlanCompleted) {
-      console.log('[Track] 健康计划已完成，尝试折叠');
-      setCollapsedSections(prev => {
-        if (prev.plan) return prev;
-        return { ...prev, plan: true };
-      });
+    if (isPlanCompleted && !lastPlanStatus.current) {
+      console.log('[Track] 健康计划已完成，触发自动折叠');
+      setCollapsedSections(prev => ({ ...prev, plan: true }));
     }
+    lastPlanStatus.current = isPlanCompleted;
   }, [isPlanCompleted]);
 
-  // 健康数据独立折叠逻辑
+  const lastVitalsStatus = useRef(isVitalsCompleted);
   useEffect(() => {
-    if (isSyncedToday && isVitalsCompleted) {
-      console.log('[Track] 健康数据已同步并完成，尝试折叠');
-      setCollapsedSections(prev => {
-        if (prev.vitals) return prev;
-        return { ...prev, vitals: true };
-      });
+    if (isVitalsCompleted && !lastVitalsStatus.current) {
+      console.log('[Track] 健康指标已完成，触发自动折叠');
+      setCollapsedSections(prev => ({ ...prev, vitals: true }));
     }
-  }, [isSyncedToday, isVitalsCompleted]);
+    lastVitalsStatus.current = isVitalsCompleted;
+  }, [isVitalsCompleted]);
 
-  // 体感反馈独立折叠逻辑
+  const lastFeedbackStatus = useRef(isFeedbackCompleted);
   useEffect(() => {
-    if (isSyncedToday && isFeedbackCompleted) {
-      console.log('[Track] 体感反馈已同步并完成，尝试折叠');
-      setCollapsedSections(prev => {
-        if (prev.feedback) return prev;
-        return { ...prev, feedback: true };
-      });
+    if (isFeedbackCompleted && !lastFeedbackStatus.current) {
+      console.log('[Track] 体感反馈已完成，触发自动折叠');
+      setCollapsedSections(prev => ({ ...prev, feedback: true }));
     }
-  }, [isSyncedToday, isFeedbackCompleted]);
+    lastFeedbackStatus.current = isFeedbackCompleted;
+  }, [isFeedbackCompleted]);
 
   // 挂载检查
   useEffect(() => {
@@ -308,19 +288,24 @@ export default function TrackClient() {
       
       // 加载当日数据
       const savedDailyData = localStorage.getItem(`hc_daily_${savedId}_${todayStr}`);
-      if (savedDailyData) {
-        const parsed = JSON.parse(savedDailyData);
-        if (parsed.vitals) setDailyVitals(parsed.vitals);
-        if (parsed.feedback) {
-          setDailyFeedback(prev => ({
-            ...prev,
-            ...parsed.feedback
-          }));
-        }
-        if (parsed.water !== undefined) setWaterIntake(parsed.water);
-        if (parsed.waterTarget !== undefined) setWaterTarget(parsed.waterTarget);
-        if (parsed.isSyncedToday !== undefined) setIsSyncedToday(parsed.isSyncedToday);
-      }
+          if (savedDailyData) {
+            try {
+              const parsed = JSON.parse(savedDailyData);
+              if (parsed.vitals) setDailyVitals(parsed.vitals);
+              if (parsed.feedback) {
+                setDailyFeedback(prev => ({
+                  ...prev,
+                  ...parsed.feedback
+                }));
+              }
+              if (parsed.water !== undefined) setWaterIntake(parsed.water);
+              if (parsed.waterTarget !== undefined) setWaterTarget(parsed.waterTarget);
+              if (parsed.isSyncedToday !== undefined) setIsSyncedToday(parsed.isSyncedToday);
+            } catch (e) {
+              console.error('Failed to parse daily data', e);
+              localStorage.removeItem(`hc_daily_${savedId}_${todayStr}`);
+            }
+          }
     } else if (slugFromUrl) {
       // 检查 slug 是否匹配
       const clientBySlug = clients.find(c => c.slug === slugFromUrl);
@@ -674,7 +659,7 @@ export default function TrackClient() {
 
       {isVerified && client ? (
         <>
-          {achievementToShow && (
+          {achievementToShow && client && (
             <div className="fixed inset-0 z-[200000] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-sm">
               <AchievementCard 
                 client={client as any} 
@@ -817,27 +802,35 @@ export default function TrackClient() {
                 {/* 2. 三大板块 */}
                 <div className="space-y-4">
                   {/* 板块 1: 我的健康计划 */}
-                  <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden transition-all duration-500">
+                  <div className={`bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden transition-all duration-500 ${
+                    isPlanCompleted ? 'opacity-90' : ''
+                  }`}>
                     <button 
                       onClick={() => setCollapsedSections(prev => ({ ...prev, plan: !prev.plan }))}
-                      className="w-full px-6 py-5 flex items-center justify-between group active:bg-emerald-200 bg-emerald-100/50 transition-colors"
+                      className={`w-full px-6 py-5 flex items-center justify-between group transition-colors ${
+                        isPlanCompleted ? 'bg-slate-50/50' : 'active:bg-emerald-50'
+                      }`}
                     >
                       <div className="flex items-center gap-4">
-                        <div className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all ${isPlanCompleted ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-100' : 'bg-white text-emerald-600 shadow-sm'}`}>
+                        <div className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all ${
+                          isPlanCompleted 
+                            ? 'bg-slate-200 text-slate-500 shadow-none' 
+                            : 'bg-white text-emerald-600 shadow-sm border border-emerald-100'
+                        }`}>
                           {isPlanCompleted ? <CheckCircle2 className="w-5 h-5" /> : <ClipboardList className="w-5 h-5" />}
                         </div>
                         <div className="text-left">
-                          <h3 className="text-sm font-black text-emerald-900 uppercase tracking-wider">我的健康计划</h3>
-                          <p className={`text-[10px] font-bold uppercase tracking-widest ${isPlanCompleted ? 'text-emerald-700/60' : 'text-emerald-600/70'}`}>
-                            {isPlanCompleted ? '今日任务已全部完成' : `${getSlotTasks(activeSlot).filter((t: any) => t.completed).length}/${getSlotTasks(activeSlot).length} 已完成`}
+                          <h3 className={`text-sm font-black uppercase tracking-wider ${isPlanCompleted ? 'text-slate-400' : 'text-slate-900'}`}>今日健康计划</h3>
+                          <p className={`text-[10px] font-bold uppercase tracking-widest ${isPlanCompleted ? 'text-slate-400' : 'text-slate-400'}`}>
+                            {isPlanCompleted ? '今日任务已全部完成' : `${tasks.filter((t: any) => t.completed).length}/${tasks.length} 已完成`}
                           </p>
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
                         {isPlanCompleted && (
-                          <span className="text-[10px] font-black text-emerald-700 bg-white px-2 py-1 rounded-lg uppercase tracking-widest border border-emerald-200 shadow-sm">已完成</span>
+                          <span className="text-[10px] font-black text-slate-400 bg-slate-100 px-2 py-1 rounded-lg uppercase tracking-widest border border-slate-200">已完成</span>
                         )}
-                        {collapsedSections.plan ? <ChevronDown className="w-5 h-5 text-emerald-500" /> : <ChevronUp className="w-5 h-5 text-emerald-500" />}
+                        {collapsedSections.plan ? <ChevronDown className="w-5 h-5 text-slate-300" /> : <ChevronUp className="w-5 h-5 text-slate-300" />}
                       </div>
                     </button>
                     
@@ -907,33 +900,35 @@ export default function TrackClient() {
                   </div>
 
                   {/* 板块 2: 我的健康数据 */}
-                  <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden transition-all duration-500">
+                  <div className={`bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden transition-all duration-500 ${
+                    isVitalsCompleted ? 'opacity-90' : ''
+                  }`}>
                     <button 
                       onClick={() => setCollapsedSections(prev => ({ ...prev, vitals: !prev.vitals }))}
                       className={`w-full px-6 py-5 flex items-center justify-between group transition-colors ${
-                        isVitalsCompleted ? 'active:bg-emerald-200 bg-emerald-100/50' : 'active:bg-blue-200 bg-blue-100/50'
+                        isVitalsCompleted ? 'bg-slate-50/50' : 'active:bg-blue-50'
                       }`}
                     >
                       <div className="flex items-center gap-4">
                         <div className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all ${
                           isVitalsCompleted
-                            ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-100' 
-                            : 'bg-white text-blue-600 shadow-sm'
+                            ? 'bg-slate-200 text-slate-500 shadow-none' 
+                            : 'bg-white text-blue-600 shadow-sm border border-blue-100'
                         }`}>
                           {isVitalsCompleted ? <CheckCircle2 className="w-5 h-5" /> : <Activity className="w-5 h-5" />}
                         </div>
                         <div className="text-left">
-                          <h3 className={`text-sm font-black uppercase tracking-wider ${isVitalsCompleted ? 'text-emerald-900' : 'text-blue-900'}`}>我的健康数据</h3>
-                          <p className={`text-[10px] font-bold uppercase tracking-widest ${isVitalsCompleted ? 'text-emerald-700/60' : 'text-blue-600/70'}`}>
-                            {isSyncedToday ? '今日数据已保存并同步' : (isVitalsCompleted ? '数据已填写，请同步' : '请录入今日体征指标')}
+                          <h3 className={`text-sm font-black uppercase tracking-wider ${isVitalsCompleted ? 'text-slate-400' : 'text-slate-900'}`}>今日健康指标</h3>
+                          <p className={`text-[10px] font-bold uppercase tracking-widest ${isVitalsCompleted ? 'text-slate-400' : 'text-slate-400'}`}>
+                            {isVitalsCompleted ? '今日体征已录入完成' : '请录入今日体征指标'}
                           </p>
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
-                        {isSyncedToday && (
-                          <span className="text-[10px] font-black text-emerald-700 bg-white px-2 py-1 rounded-lg uppercase tracking-widest border border-emerald-200 shadow-sm">已完成</span>
+                        {isVitalsCompleted && (
+                          <span className="text-[10px] font-black text-slate-400 bg-slate-100 px-2 py-1 rounded-lg uppercase tracking-widest border border-slate-200">已完成</span>
                         )}
-                        {collapsedSections.vitals ? <ChevronDown className={`w-5 h-5 ${isVitalsCompleted ? 'text-emerald-500' : 'text-blue-500'}`} /> : <ChevronUp className={`w-5 h-5 ${isVitalsCompleted ? 'text-emerald-500' : 'text-blue-500'}`} />}
+                        {collapsedSections.vitals ? <ChevronDown className="w-5 h-5 text-slate-300" /> : <ChevronUp className="w-5 h-5 text-slate-300" />}
                       </div>
                     </button>
 
@@ -961,52 +956,40 @@ export default function TrackClient() {
                             </div>
                           </div>
                         ))}
-                        <button 
-                          onClick={handleSync}
-                          className={`col-span-2 mt-2 py-3 rounded-2xl text-[11px] font-black uppercase tracking-[0.2em] shadow-xl active:scale-[0.98] transition-all ${
-                            isSyncedToday 
-                              ? 'bg-emerald-500 text-white shadow-emerald-100' 
-                              : 'bg-slate-900 text-white shadow-slate-200'
-                          }`}
-                        >
-                          {isSyncedToday ? (
-                            isSyncing ? '正在同步...' : '已同步给营养师 (点击可更新)'
-                          ) : (
-                            isSyncing ? '正在保存...' : '保存并同步给营养师'
-                          )}
-                        </button>
                       </div>
                     )}
                   </div>
 
                   {/* 板块 3: 体感反馈 */}
-                  <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden transition-all duration-500">
+                  <div className={`bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden transition-all duration-500 ${
+                    isFeedbackCompleted ? 'opacity-90' : ''
+                  }`}>
                     <button 
                       onClick={() => setCollapsedSections(prev => ({ ...prev, feedback: !prev.feedback }))}
                       className={`w-full px-6 py-5 flex items-center justify-between group transition-colors ${
-                        isFeedbackCompleted ? 'active:bg-emerald-200 bg-emerald-100/50' : 'active:bg-purple-200 bg-purple-100/50'
+                        isFeedbackCompleted ? 'bg-slate-50/50' : 'active:bg-purple-50'
                       }`}
                     >
                       <div className="flex items-center gap-4">
                         <div className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all ${
                           isFeedbackCompleted
-                            ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-100' 
-                            : 'bg-white text-purple-600 shadow-sm'
+                            ? 'bg-slate-200 text-slate-500 shadow-none' 
+                            : 'bg-white text-purple-600 shadow-sm border border-purple-100'
                         }`}>
                           {isFeedbackCompleted ? <CheckCircle2 className="w-5 h-5" /> : <MessageSquare className="w-5 h-5" />}
                         </div>
                         <div className="text-left">
-                          <h3 className={`text-sm font-black uppercase tracking-wider ${isFeedbackCompleted ? 'text-emerald-900' : 'text-purple-900'}`}>体感反馈</h3>
-                          <p className={`text-[10px] font-bold uppercase tracking-widest ${isFeedbackCompleted ? 'text-emerald-700/60' : 'text-purple-600/70'}`}>
-                            {isSyncedToday ? '今日体感已保存并同步' : (isFeedbackCompleted ? '反馈已填写，请点击同步' : '记录您的身体状态')}
+                          <h3 className={`text-sm font-black uppercase tracking-wider ${isFeedbackCompleted ? 'text-slate-400' : 'text-slate-900'}`}>今日体感反馈</h3>
+                          <p className={`text-[10px] font-bold uppercase tracking-widest ${isFeedbackCompleted ? 'text-slate-400' : 'text-slate-400'}`}>
+                            {isFeedbackCompleted ? '今日体感已记录完成' : '记录您的身体状态'}
                           </p>
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
-                        {isSyncedToday && (
-                          <span className="text-[10px] font-black text-emerald-700 bg-white px-2 py-1 rounded-lg uppercase tracking-widest border border-emerald-200 shadow-sm">已完成</span>
+                        {isFeedbackCompleted && (
+                          <span className="text-[10px] font-black text-slate-400 bg-slate-100 px-2 py-1 rounded-lg uppercase tracking-widest border border-slate-200">已完成</span>
                         )}
-                        {collapsedSections.feedback ? <ChevronDown className={`w-5 h-5 ${isFeedbackCompleted ? 'text-emerald-500' : 'text-purple-500'}`} /> : <ChevronUp className={`w-5 h-5 ${isFeedbackCompleted ? 'text-emerald-500' : 'text-purple-500'}`} />}
+                        {collapsedSections.feedback ? <ChevronDown className="w-5 h-5 text-slate-300" /> : <ChevronUp className="w-5 h-5 text-slate-300" />}
                       </div>
                     </button>
 
@@ -1057,25 +1040,34 @@ export default function TrackClient() {
                             className="w-full h-24 bg-slate-50 rounded-2xl p-4 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-purple-100 transition-all resize-none"
                           />
                         </div>
-
-                        {/* 新增同步按钮，确保反馈填完后也能在这里直接同步 */}
-                        <button 
-                          onClick={handleSync}
-                          className={`w-full py-3 rounded-2xl text-[11px] font-black uppercase tracking-[0.2em] shadow-xl active:scale-[0.98] transition-all ${
-                            isSyncedToday 
-                              ? 'bg-emerald-500 text-white shadow-emerald-100' 
-                              : 'bg-slate-900 text-white shadow-slate-200'
-                          }`}
-                        >
-                          {isSyncedToday ? (
-                            isSyncing ? '正在同步...' : '已同步给营养师 (点击可更新)'
-                          ) : (
-                            isSyncing ? '正在保存...' : '保存并同步给营养师'
-                          )}
-                        </button>
                       </div>
                     )}
                   </div>
+                </div>
+
+                {/* 全局同步按钮 (浮动/底部) */}
+                <div className="pt-4 pb-8">
+                  <button 
+                    onClick={handleSync}
+                    disabled={isSyncing}
+                    className={`w-full py-4 rounded-[24px] flex items-center justify-center gap-3 transition-all duration-500 shadow-xl active:scale-[0.98] ${
+                      isSyncedToday 
+                        ? 'bg-emerald-500 text-white shadow-emerald-100' 
+                        : 'bg-slate-900 text-white shadow-slate-300'
+                    }`}
+                  >
+                    {isSyncing ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <Upload className="w-5 h-5" />
+                    )}
+                    <span className="text-sm font-black uppercase tracking-[0.2em]">
+                      {isSyncedToday ? '数据已同步给营养师' : (isSyncing ? '正在同步数据...' : '同步今日数据给营养师')}
+                    </span>
+                  </button>
+                  <p className="text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-4">
+                    LAST SYNC: {isSyncedToday ? 'JUST NOW' : 'NOT SYNCED YET'}
+                  </p>
                 </div>
               </section>
             )}
@@ -1195,7 +1187,10 @@ export default function TrackClient() {
                       <p className="text-xs font-medium text-slate-400">{client.phone}</p>
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-2 gap-3 relative">
+                    <div className="absolute -top-10 right-0">
+                      <span className="text-[8px] font-black text-slate-200 uppercase tracking-widest">Build {APP_VERSION}</span>
+                    </div>
                     <div className="bg-slate-50 p-4 rounded-2xl text-center space-y-0.5 border border-slate-100">
                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">累计打卡</p>
                       <p className="text-xl font-bold text-slate-900">{(client as any).checkin_count || client.checkin_streak || 0} <span className="text-[10px] text-slate-400 font-medium">天</span></p>
@@ -1325,9 +1320,12 @@ export default function TrackClient() {
                 </button>
               </div>
 
-              <div className="mt-8 pt-6 border-t border-slate-50 text-center">
+              <div className="mt-8 pt-6 border-t border-slate-50 text-center space-y-2">
                 <p className="text-[9px] text-slate-300 font-black uppercase tracking-widest">
                   SSL SECURED · AUTHORIZED ACCESS ONLY
+                </p>
+                <p className="text-[9px] text-slate-200 font-black uppercase tracking-widest">
+                  VERSION: {APP_VERSION}
                 </p>
               </div>
             </div>

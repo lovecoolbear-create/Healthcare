@@ -21,6 +21,7 @@ import {
   X,
   ShieldCheck,
   Target,
+  Award,
   FlaskConical,
   Database,
   Zap,
@@ -1792,11 +1793,11 @@ function DashboardContent() {
                       
                       <div className="space-y-4 bg-slate-50 p-6 rounded-[24px] border border-slate-100">
                         <div>
-                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1.5 block">连续断服天数 (Adherence)</label>
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-1.5 block">连续打卡/断服天数 (Adherence Streak)</label>
                           <input 
                             type="number" 
                             value={mockClient.missed_days}
-                            onChange={(e) => setMockClient({ ...mockClient, missed_days: parseInt(e.target.value) || 0 })}
+                            onChange={(e) => setMockClient({ ...mockClient, missed_days: parseInt(e.target.value) || 0, checkin_streak: parseInt(e.target.value) || 0 })}
                             className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                             placeholder="例如: 3"
                           />
@@ -1923,20 +1924,33 @@ function DashboardContent() {
             </div>
 
             <div className="grid grid-cols-1 gap-6">
-              {['compliance', 'inventory', 'symptom', 'growth'].map(category => (
-                <div key={category} className="bg-white border border-slate-200 rounded-2xl p-5 md:p-6 shadow-sm">
-                  <h3 className="text-base md:text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
-                    {category === 'compliance' && <Activity className="w-5 h-5 text-indigo-500" />}
-                    {category === 'inventory' && <Package className="w-5 h-5 text-orange-500" />}
-                    {category === 'symptom' && <Activity className="w-5 h-5 text-rose-500" />}
-                    {category === 'growth' && <TrendingUp className="w-5 h-5 text-emerald-500" />}
-                    {category === 'compliance' ? '依从性干预机制' : 
-                     category === 'inventory' ? '库存预警机制' : 
-                     category === 'symptom' ? '体感风险干预' : '增长与关系维护'}
-                  </h3>
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    {triggers.filter(t => t.category === category).map(trigger => (
-                      <div key={trigger.id} className="p-4 md:p-5 bg-slate-50 rounded-2xl border border-slate-100 group relative overflow-hidden hover:shadow-md transition-all">
+              {['compliance', 'inventory', 'symptom', 'growth', 'points'].map(category => {
+                const categoryTriggers = triggers.filter(t => t.category === category);
+                // 默认积分规则
+                const defaultPointRules = [
+                  { id: 'p1', name: '每日打卡奖励', description: '第一天打卡获得基础积分', category: 'points', condition: { type: 'adherence_streak', threshold: 1 }, action: { type: 'push_red_dot', label: '积分奖励', priority: 'low', payload_template: '1' } },
+                  { id: 'p3', name: '连续打卡阶梯奖励', description: '连续打卡 3 天额外获得积分', category: 'points', condition: { type: 'adherence_streak', threshold: 3 }, action: { type: 'push_red_dot', label: '额外积分', priority: 'high', payload_template: '1' } },
+                  { id: 'p7', name: '满周打卡大奖', description: '连续打卡 7 天获得最高奖励', category: 'points', condition: { type: 'adherence_streak', threshold: 7 }, action: { type: 'push_red_dot', label: '周奖励', priority: 'critical', payload_template: '2' } }
+                ];
+                
+                const displayTriggers = category === 'points' && categoryTriggers.length === 0 ? defaultPointRules : categoryTriggers;
+
+                return (
+                  <div key={category} className="bg-white border border-slate-200 rounded-2xl p-5 md:p-6 shadow-sm">
+                    <h3 className="text-base md:text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
+                      {category === 'compliance' && <Activity className="w-5 h-5 text-indigo-500" />}
+                      {category === 'inventory' && <Package className="w-5 h-5 text-orange-500" />}
+                      {category === 'symptom' && <Activity className="w-5 h-5 text-rose-500" />}
+                      {category === 'growth' && <TrendingUp className="w-5 h-5 text-emerald-500" />}
+                      {category === 'points' && <Award className="w-5 h-5 text-amber-500" />}
+                      {category === 'compliance' ? '依从性干预机制' : 
+                       category === 'inventory' ? '库存预警机制' : 
+                       category === 'symptom' ? '体感风险干预' : 
+                       category === 'points' ? '积分奖励规则' : '增长与关系维护'}
+                    </h3>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      {displayTriggers.map(trigger => (
+                        <div key={trigger.id} className="p-4 md:p-5 bg-slate-50 rounded-2xl border border-slate-100 group relative overflow-hidden hover:shadow-md transition-all">
                         <div className="absolute top-0 right-0 w-16 h-16 -mr-8 -mt-8 bg-emerald-500/5 rounded-full group-hover:scale-150 transition-transform duration-500"></div>
                         
                         <div className="relative z-10">
@@ -1976,7 +1990,8 @@ function DashboardContent() {
                                   <div className="h-px flex-1 bg-slate-100"></div>
                                 </div>
                                 <div className="text-[10px] md:text-xs font-bold text-slate-700 bg-white border border-slate-100 px-2 md:px-3 py-1.5 md:py-2 rounded-xl inline-block shadow-sm group-hover:border-indigo-200 transition-colors truncate max-w-full">
-                                  {trigger.condition?.type === 'adherence_streak' && `连续 ${trigger.condition?.threshold} 天断服`}
+                                  {trigger.category === 'points' && trigger.condition?.type === 'adherence_streak' && `连续打卡满 ${trigger.condition?.threshold} 天`}
+                                  {trigger.category !== 'points' && trigger.condition?.type === 'adherence_streak' && `连续 ${trigger.condition?.threshold} 天断服`}
                                   {trigger.condition?.type === 'stock_level' && `库存水位 <= ${trigger.condition?.threshold} 天`}
                                   {trigger.condition?.type === 'vital_trend' && `趋势指标下降 ${trigger.condition?.threshold} 次`}
                                   {trigger.condition?.type === 'protocol_duration' && `方案执行满 ${trigger.condition?.threshold} 天`}
@@ -3383,6 +3398,7 @@ function DashboardContent() {
                     <option value="inventory">库存与复购</option>
                     <option value="symptom">体感与风险</option>
                     <option value="growth">商业增长</option>
+                    <option value="points">积分奖励</option>
                   </select>
                 </div>
                 <div className="space-y-2">
@@ -3406,7 +3422,7 @@ function DashboardContent() {
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">判定逻辑</label>
                   <select name="condition_type" className="w-full bg-white border-none rounded-xl md:rounded-2xl py-3 md:py-4 px-4 md:px-6 text-sm focus:ring-2 focus:ring-emerald-500 outline-none appearance-none" defaultValue={editingTrigger?.condition?.type || 'adherence_streak'}>
-                    <option value="adherence_streak">行为维度：连续 N 天断服</option>
+                    <option value="adherence_streak">行为维度：连续 N 天打卡/断服</option>
                     <option value="stock_level">库存维度：库存水位低于 N 天</option>
                     <option value="vital_trend">体感维度：趋势指标连续下降 N 次</option>
                     <option value="protocol_duration">时间维度：方案执行满 N 天周期</option>

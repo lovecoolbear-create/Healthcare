@@ -27,7 +27,8 @@ import {
   Minus,
   Droplets,
   ClipboardList,
-  Upload
+  Upload,
+  LogOut
 } from 'lucide-react';
 import { useData } from '../../../context/DataContext';
 import { Feedback, WeightLog, CheckinLog } from '@healthcare/shared';
@@ -49,8 +50,11 @@ export default function TrackClient({ slug }: { slug: string }) {
     updateFeedback,
     updateClient,
     refreshData,
-    addHealthMetric
+    addHealthMetric,
+    triggers
   } = useData();
+
+  const APP_VERSION = 'v1.0.5';
   
   const [activeTab, setActiveTab] = useState<'today' | 'trends' | 'messages' | 'me'>('today');
   const [activeSlot, setActiveSlot] = useState<string>('breakfast');
@@ -59,9 +63,27 @@ export default function TrackClient({ slug }: { slug: string }) {
   const [newBodyFat, setNewBodyFat] = useState('');
   const [newMessage, setNewMessage] = useState('');
   const [showPWAGuide, setShowPWAGuide] = useState(false);
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-  const [showGhostingBanner, setShowGhostingBanner] = useState(false);
   const [achievementToShow, setAchievementToShow] = useState<{ type: 'streak' | 'milestone', value: number } | null>(null);
+
+  const checkinRules = useMemo(() => {
+    return triggers.filter(t => t.category === 'points' && t.is_enabled && t.condition.type === 'adherence_streak');
+  }, [triggers]);
+
+  const getPointsForDay = (day: number) => {
+    const rules = checkinRules.filter(r => r.condition.threshold === day);
+    if (rules.length === 0) return null;
+    
+    // Sum up points from all matching rules for this day
+    const totalPoints = rules.reduce((sum, r) => sum + parseInt(r.action.payload_template || '0'), 0);
+    return totalPoints > 0 ? (day === 1 ? `${totalPoints}pt` : `+${totalPoints}pt${totalPoints > 1 ? 's' : ''}`) : null;
+  };
+
+  // --- 登录/验证状态 ---
+  const [isVerified, setIsVerified] = useState<boolean | null>(null);
+  const [loginPhone, setLoginPhone] = useState('');
+  const [isLoginLoading, setIsLoginLoading] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [showContactNutritionist, setShowContactNutritionist] = useState(false);
 
   // --- 业务状态 (PRD 核心) ---
   const [dailyVitals, setDailyVitals] = useState({
@@ -90,6 +112,95 @@ export default function TrackClient({ slug }: { slug: string }) {
     feedback: false
   });
 
+  // 1. 基础 Hooks
+  const client = useMemo(() => {
+    const storedId = typeof window !== 'undefined' ? localStorage.getItem('hc_client_id') : null;
+    return clients.find(c => c.id === storedId || c.slug === slug);
+  }, [clients, slug]);
+
+  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+
+  // 2. 数据相关 Hooks
+  const clientFeedbacks = useMemo(() => {
+    if (!client) return [];
+    return feedbacks.filter(f => f.client_id === client.id).sort((a, b) => 
+      new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    );
+  }, [feedbacks, client?.id]);
+
+  const unreadCount = useMemo(() => {
+    return clientFeedbacks.filter(f => f.sender_type === 'practitioner' && !f.is_read).length;
+  }, [clientFeedbacks]);
+
+  const latestWeightLog = useMemo(() => {
+    if (!client) return null;
+    const logs = weightLogs.filter(w => w.client_id === client.id);
+    if (logs.length === 0) return null;
+    return logs.sort((a, b) => new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime())[0];
+  }, [weightLogs, client?.id]);
+
+  const currentPhase = useMemo(() => {
+    if (!client) return null;
+    const protocol = protocols.find(p => p.id === client.protocol_id);
+    if (!protocol) return null;
+    return protocol.phases[0]; 
+  }, [protocols, client?.protocol_id]);
+
+  const tasks = useMemo(() => {
+    if (!currentPhase || !client) return [];
+    return currentPhase.actions.map(action => {
+      const slot_id = `${todayStr}:${action.timing_tag}`;
+      const log = checkinLogs.find(l => l.client_id === client.id && l.slot_id === slot_id);
+      const product = products.find(p => p.id === action.product_id);
+      
+      let icon = Zap;
+      if (action.timing_tag === 'before_bed') icon = Moon;
+      if (action.timing_tag === 'with_meal' || action.timing_tag === 'after_meal') icon = Utensils;
+
+      return {
+        id: action.id,
+        slot_id,
+        tag: action.timing_tag,
+        time: action.timing_tag.replace('_', ' ').toUpperCase(),
+        label: product?.name || action.product_id,
+        product_id: action.product_id,
+        completed: !!log?.is_taken,
+        log_id: log?.id,
+        icon
+      };
+    });
+  }, [currentPhase, checkinLogs, products, client?.id, todayStr]);
+
+  const getSlotTasks = useCallback((slot: string) => {
+    return tasks.filter((t: any) => {
+      const tag = t.tag.toLowerCase();
+      if (slot === 'breakfast') {
+        return tag.includes('morning') || tag.includes('breakfast') || tag.includes('wake') || 
+               tag.includes('empty_stomach') || tag.includes('before_meal') || tag.includes('with_meal');
+      }
+      if (slot === 'lunch') {
+        return tag.includes('lunch') || tag.includes('afternoon') || tag.includes('any_time');
+      }
+      if (slot === 'dinner') {
+        return tag.includes('dinner') || tag.includes('evening') || tag.includes('after_meal') || 
+               tag.includes('bed') || tag.includes('sleep') || tag.includes('before_bed');
+      }
+      return false;
+    });
+  }, [tasks]);
+
+  const isPlanCompleted = useMemo(() => {
+    const todayTasks = getSlotTasks('breakfast').concat(getSlotTasks('lunch'), getSlotTasks('dinner'));
+    return todayTasks.length > 0 && todayTasks.every((t: any) => t.completed);
+  }, [getSlotTasks]);
+
+  const isVitalsCompleted = useMemo(() => {
+    return dailyVitals.weight !== '' && 
+           dailyVitals.bodyFat !== '' && 
+           dailyVitals.muscleMass !== '' && 
+           dailyVitals.visceralFat !== '';
+  }, [dailyVitals]);
+
   const isFeedbackCompleted = useMemo(() => {
     return dailyFeedback.mood > 0 && 
            dailyFeedback.energy > 0 && 
@@ -97,36 +208,12 @@ export default function TrackClient({ slug }: { slug: string }) {
            dailyFeedback.bowel > 0;
   }, [dailyFeedback]);
 
-  // 打分颜色逻辑
-  const getScoreColor = useCallback((score: number, type: 'bg' | 'text' | 'shadow') => {
-    if (!score || score === 0) {
-      return type === 'text' ? 'text-slate-300' : 'bg-slate-50';
-    }
-    
-    const colors = [
-      { bg: 'bg-rose-500', text: 'text-rose-600', shadow: 'shadow-rose-100' },     // 1
-      { bg: 'bg-rose-400', text: 'text-rose-500', shadow: 'shadow-rose-100' },     // 2
-      { bg: 'bg-orange-500', text: 'text-orange-600', shadow: 'shadow-orange-100' }, // 3
-      { bg: 'bg-orange-400', text: 'text-orange-500', shadow: 'shadow-orange-100' }, // 4
-      { bg: 'bg-amber-500', text: 'text-amber-600', shadow: 'shadow-amber-100' },  // 5
-      { bg: 'bg-amber-400', text: 'text-amber-500', shadow: 'shadow-amber-100' },  // 6
-      { bg: 'bg-lime-500', text: 'text-lime-600', shadow: 'shadow-lime-100' },    // 7
-      { bg: 'bg-lime-400', text: 'text-lime-500', shadow: 'shadow-lime-100' },    // 8
-      { bg: 'bg-emerald-500', text: 'text-emerald-600', shadow: 'shadow-emerald-100' }, // 9
-      { bg: 'bg-emerald-600', text: 'text-emerald-700', shadow: 'shadow-emerald-100' }  // 10
-    ];
-    
-    const index = Math.min(9, Math.max(0, Math.floor(score) - 1));
-    return colors[index][type];
-  }, []);
+  // 板块折叠状态的 useRef 必须在它依赖的 useMemo 之后
+  const lastPlanStatus = useRef(isPlanCompleted);
+  const lastVitalsStatus = useRef(isVitalsCompleted);
+  const lastFeedbackStatus = useRef(isFeedbackCompleted);
 
-  // --- 登录验证状态 ---
-  const [isVerified, setIsVerified] = useState<boolean | null>(null);
-  const [loginPhone, setLoginPhone] = useState('');
-  const [loginError, setLoginError] = useState('');
-  const [isLoginLoading, setIsLoginLoading] = useState(false);
-  const [showContactNutritionist, setShowContactNutritionist] = useState(false);
-
+  // 3. 副作用 Hooks
   useEffect(() => {
     // 检查本地存储
     const storedId = localStorage.getItem('hc_client_id');
@@ -137,12 +224,17 @@ export default function TrackClient({ slug }: { slug: string }) {
       const today = new Date().toISOString().split('T')[0];
       const savedDailyData = localStorage.getItem(`hc_daily_${storedId}_${today}`);
       if (savedDailyData) {
-        const parsed = JSON.parse(savedDailyData);
-        if (parsed.vitals) setDailyVitals(parsed.vitals);
-        if (parsed.feedback) setDailyFeedback(parsed.feedback);
-        if (parsed.water !== undefined) setWaterIntake(parsed.water);
-        if (parsed.waterTarget !== undefined) setWaterTarget(parsed.waterTarget);
-        if (parsed.isSyncedToday !== undefined) setIsSyncedToday(parsed.isSyncedToday);
+        try {
+          const parsed = JSON.parse(savedDailyData);
+          if (parsed.vitals) setDailyVitals(parsed.vitals);
+          if (parsed.feedback) setDailyFeedback(parsed.feedback);
+          if (parsed.water !== undefined) setWaterIntake(parsed.water);
+          if (parsed.waterTarget !== undefined) setWaterTarget(parsed.waterTarget);
+          if (parsed.isSyncedToday !== undefined) setIsSyncedToday(parsed.isSyncedToday);
+        } catch (e) {
+          console.error('Failed to parse daily data', e);
+          localStorage.removeItem(`hc_daily_${storedId}_${today}`);
+        }
       }
     } else {
       setIsVerified(false);
@@ -178,63 +270,7 @@ export default function TrackClient({ slug }: { slug: string }) {
     }
   }, [dailyVitals, dailyFeedback, waterIntake]);
 
-  const client = useMemo(() => {
-    const storedId = typeof window !== 'undefined' ? localStorage.getItem('hc_client_id') : null;
-    return clients.find(c => c.id === storedId || c.slug === slug);
-  }, [clients, slug, isVerified]);
-
-  const todayStr = new Date().toISOString().split('T')[0];
-
-  const currentPhase = useMemo(() => {
-    if (!client) return null;
-    const protocol = protocols.find(p => p.id === client.protocol_id);
-    if (!protocol) return null;
-    return protocol.phases[0]; 
-  }, [protocols, client?.protocol_id]);
-
-  // 动态生成今日任务 (基于方案配置)
-  const tasks = useMemo(() => {
-    if (!currentPhase || !client) return [];
-    return currentPhase.actions.map(action => {
-      const slot_id = `${todayStr}:${action.timing_tag}`;
-      const log = checkinLogs.find(l => l.client_id === client.id && l.slot_id === slot_id);
-      const product = products.find(p => p.id === action.product_id);
-      
-      let icon = Zap;
-      if (action.timing_tag === 'before_bed') icon = Moon;
-      if (action.timing_tag === 'with_meal' || action.timing_tag === 'after_meal') icon = Utensils;
-
-      return {
-        id: action.id,
-        slot_id,
-        time: action.timing_tag.replace('_', ' ').toUpperCase(),
-        label: product?.name || action.product_id,
-        product_id: action.product_id,
-        completed: !!log?.is_taken,
-        log_id: log?.id,
-        icon
-      };
-    });
-  }, [currentPhase, checkinLogs, products, client?.id, todayStr]);
-
-  // 检查板块完成情况
-  const isPlanCompleted = useMemo(() => {
-    return tasks.length > 0 && tasks.every((t: any) => t.completed);
-  }, [tasks]);
-
-  const isVitalsCompleted = useMemo(() => {
-    return dailyVitals.weight !== '' && 
-           dailyVitals.bodyFat !== '' && 
-           dailyVitals.muscleMass !== '' && 
-           dailyVitals.visceralFat !== '';
-  }, [dailyVitals]);
-
-  const isAllCompleted = useMemo(() => {
-    return isPlanCompleted && isVitalsCompleted && isFeedbackCompleted;
-  }, [isPlanCompleted, isVitalsCompleted, isFeedbackCompleted]);
-
   // 自动折叠逻辑：填写完成即折叠 (独立处理)
-  const lastPlanStatus = useRef(isPlanCompleted);
   useEffect(() => {
     if (isPlanCompleted && !lastPlanStatus.current) {
       setCollapsedSections(prev => ({ ...prev, plan: true }));
@@ -242,7 +278,6 @@ export default function TrackClient({ slug }: { slug: string }) {
     lastPlanStatus.current = isPlanCompleted;
   }, [isPlanCompleted]);
 
-  const lastVitalsStatus = useRef(isVitalsCompleted);
   useEffect(() => {
     if (isVitalsCompleted && !lastVitalsStatus.current) {
       setCollapsedSections(prev => ({ ...prev, vitals: true }));
@@ -250,13 +285,249 @@ export default function TrackClient({ slug }: { slug: string }) {
     lastVitalsStatus.current = isVitalsCompleted;
   }, [isVitalsCompleted]);
 
-  const lastFeedbackStatus = useRef(isFeedbackCompleted);
   useEffect(() => {
     if (isFeedbackCompleted && !lastFeedbackStatus.current) {
       setCollapsedSections(prev => ({ ...prev, feedback: true }));
     }
     lastFeedbackStatus.current = isFeedbackCompleted;
   }, [isFeedbackCompleted]);
+
+  // 进入消息页时，将所有营养师消息标为已读
+  useEffect(() => {
+    if (activeTab === 'messages') {
+      clientFeedbacks.forEach(f => {
+        if (f.sender_type === 'practitioner' && !f.is_read) {
+          updateFeedback(f.id, { is_read: true });
+        }
+      });
+    }
+  }, [activeTab, clientFeedbacks, updateFeedback]);
+
+  // PWA 相关副作用
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      // 在移动端，如果未被拦截，则显示引导
+      if (!localStorage.getItem('pwa_guide_dismissed')) {
+        setShowPWAGuide(true);
+      }
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    
+    if (client && !client.push_subscription) {
+      subscribeToPush();
+    }
+
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+  }, [client]);
+
+  // 检测 iOS 且未添加到主屏幕
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
+    
+    if (isIOS && !isStandalone && !localStorage.getItem('pwa_guide_dismissed')) {
+      setShowPWAGuide(true);
+    }
+  }, []);
+
+  // 检测成就达成 (7/14/21天)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !client) return;
+    
+    const streak = client.checkin_streak || 0;
+    const milestones = [7, 14, 21];
+    
+    milestones.forEach(m => {
+      const key = `achievement_shown_${client.id}_streak_${m}`;
+      if (streak >= m && !localStorage.getItem(key)) {
+        setAchievementToShow({ type: 'streak', value: m });
+        localStorage.setItem(key, 'true');
+      }
+    });
+
+    if (weightLogs && weightLogs.length >= 2) {
+      const sortedLogs = [...weightLogs]
+        .filter(l => l.client_id === client.id && l.body_fat_percentage !== undefined)
+        .sort((a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime());
+      
+      if (sortedLogs.length >= 2) {
+        const firstFat = sortedLogs[0].body_fat_percentage!;
+        const latestFat = sortedLogs[sortedLogs.length - 1].body_fat_percentage!;
+        const reduction = firstFat - latestFat;
+        
+        const key = `achievement_shown_${client.id}_fat_reduction_1`;
+        if (reduction >= 1 && !localStorage.getItem(key)) {
+          setAchievementToShow({ type: 'milestone', value: 1 });
+          localStorage.setItem(key, 'true');
+        }
+      }
+    }
+  }, [client, weightLogs]);
+
+  // 检测失联状态 (Level 1 & Level 2)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !client) return;
+
+    if (client.missed_days && client.missed_days >= 1) {
+      // Level 2: 48h (missed_days >= 2) - 尝试请求权限并发送本地通知 (模拟 Web Push)
+      if (client.missed_days >= 2) {
+        if ('Notification' in window) {
+          try {
+            if (Notification.permission === 'default') {
+              Notification.requestPermission();
+            } else if (Notification.permission === 'granted') {
+              // 这里仅作为演示，实际生产中应由服务器推送
+              const lastPushTime = localStorage.getItem(`last_push_${client.id}`);
+              const now = Date.now();
+              // 24小时内不重复推送
+              if (!lastPushTime || (now - parseInt(lastPushTime)) > 86400000) {
+                try {
+                  new Notification('[HealthCare]', {
+                    body: '您的专属营养师正在关注您的进度，记得同步今日数据。',
+                    icon: 'https://cdn-icons-png.flaticon.com/512/3063/3063822.png'
+                  });
+                  localStorage.setItem(`last_push_${client.id}`, now.toString());
+                } catch (err) {
+                  console.error('Failed to create notification instance', err);
+                }
+              }
+            }
+          } catch (e) {
+            console.error('Failed to handle notification permission/sending', e);
+          }
+        }
+      }
+    }
+  }, [client]);
+
+  // --- 业务函数 ---
+
+  // 打分颜色逻辑
+  const getScoreColor = useCallback((score: number, type: 'bg' | 'text' | 'shadow') => {
+    if (score === undefined || score === null || isNaN(Number(score)) || Number(score) === 0) {
+      return type === 'text' ? 'text-slate-300' : 'bg-slate-50';
+    }
+    
+    const colors = [
+      { bg: 'bg-rose-500', text: 'text-rose-600', shadow: 'shadow-rose-100' },     // 1
+      { bg: 'bg-rose-400', text: 'text-rose-500', shadow: 'shadow-rose-100' },     // 2
+      { bg: 'bg-orange-500', text: 'text-orange-600', shadow: 'shadow-orange-100' }, // 3
+      { bg: 'bg-orange-400', text: 'text-orange-500', shadow: 'shadow-orange-100' }, // 4
+      { bg: 'bg-amber-500', text: 'text-amber-600', shadow: 'shadow-amber-100' },  // 5
+      { bg: 'bg-amber-400', text: 'text-amber-500', shadow: 'shadow-amber-100' },  // 6
+      { bg: 'bg-lime-500', text: 'text-lime-600', shadow: 'shadow-lime-100' },    // 7
+      { bg: 'bg-lime-400', text: 'text-lime-500', shadow: 'shadow-lime-100' },    // 8
+      { bg: 'bg-emerald-500', text: 'text-emerald-600', shadow: 'shadow-emerald-100' }, // 9
+      { bg: 'bg-emerald-600', text: 'text-emerald-700', shadow: 'shadow-emerald-100' }  // 10
+    ];
+    
+    const scoreNum = Number(score);
+    const index = Math.min(9, Math.max(0, Math.floor(scoreNum) - 1));
+    const colorObj = colors[index];
+    
+    if (!colorObj) {
+      return type === 'text' ? 'text-slate-300' : 'bg-slate-50';
+    }
+    
+    return colorObj[type];
+  }, []);
+
+  // Web Push 订阅逻辑
+  const subscribeToPush = async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
+    
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission === 'granted' && client) {
+        console.log('[Push] 已获得通知权限');
+        // 在实际生产中，这里应调用 serviceWorkerRegistration.pushManager.subscribe()
+        // 并将 subscription 对象同步给后端。这里暂做模拟。
+        if (!client.push_subscription) {
+          await updateClient(client, { push_subscription: 'granted' as any });
+        }
+      }
+    } catch (err) {
+      console.error('[Push] 订阅失败:', err);
+    }
+  };
+
+  const handleLogout = () => {
+    if (confirm('确定要退出当前账号吗？')) {
+      localStorage.removeItem('hc_client_id');
+      setIsVerified(false);
+      setLoginPhone('');
+      setActiveTab('today');
+    }
+  };
+
+  const handleLogin = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const normalizedPhone = loginPhone.replace(/\s|-|\+86/g, '').trim();
+    if (!normalizedPhone) return;
+    setIsLoginLoading(true);
+    setLoginError(null);
+    
+    try {
+      let found = null;
+      
+      // 1. 验证 URL Slug 对应的客户
+      if (slug) {
+        // 先从本地找
+        found = clients.find(c => c.slug === slug);
+        
+        // 本地没找到，去云端找
+        if (!found) {
+          console.log(`[Login] Local slug not found, checking cloud for slug: ${slug}`);
+          found = await cloud.findClientBySlug(slug);
+        }
+
+        if (found) {
+          const clientPhone = (found.phone || '').replace(/\s|-|\+86/g, '').trim();
+          if (clientPhone !== normalizedPhone) {
+            setLoginError('手机号码与链接不匹配');
+            setIsLoginLoading(false);
+            setShowContactNutritionist(true);
+            return;
+          }
+        }
+      }
+      
+      // 2. 如果没找到（没有 slug 或者 slug 没找到），尝试通过手机号查找
+      if (!found) {
+        // 先从本地找
+        found = clients.find(c => {
+          const p = (c.phone || '').replace(/\s|-|\+86/g, '').trim();
+          return p === normalizedPhone;
+        });
+        
+        // 本地没找到，去云端找
+        if (!found) {
+          console.log(`[Login] Local phone not found, checking cloud for phone: ${normalizedPhone}`);
+          found = await cloud.findClientByPhone(normalizedPhone);
+        }
+      }
+      
+      if (found) {
+        localStorage.setItem('hc_client_id', found.id);
+        setIsVerified(true);
+        setLoginError(null);
+      } else {
+        setLoginError('档案不存在或信息有误');
+        setShowContactNutritionist(true);
+      }
+    } catch (err: any) {
+      console.error('[Login] Error:', err);
+      setLoginError('登录服务暂不可用，请稍后再试');
+    } finally {
+      setIsLoginLoading(false);
+    }
+  };
 
   const handleSync = async () => {
     if (!client) return;
@@ -267,7 +538,7 @@ export default function TrackClient({ slug }: { slug: string }) {
       const recorded_at = new Date().toISOString();
       const syncPromises = [];
 
-      // 1. 同步体征数据 (Weight, BodyFat, MuscleMass, VisceralFat)
+      // 1. 同步体征数据
       if (dailyVitals.weight) {
         syncPromises.push(addHealthMetric({
           id: `metric-weight-${Date.now()}`,
@@ -313,7 +584,7 @@ export default function TrackClient({ slug }: { slug: string }) {
         }));
       }
 
-      // 2. 同步体感反馈 (Mood, Energy, Sleep, Bowel)
+      // 2. 同步体感反馈
       if (dailyFeedback.mood > 0) {
         syncPromises.push(addHealthMetric({
           id: `metric-mood-${Date.now()}`,
@@ -355,209 +626,83 @@ export default function TrackClient({ slug }: { slug: string }) {
         }));
       }
 
-      // 3. 同步饮水量
-      if (waterIntake > 0) {
-        syncPromises.push(addHealthMetric({
-          id: `metric-water-${Date.now()}`,
-          client_id: client.id,
-          metric_type: 'WaterIntake',
-          metric_value: waterIntake,
-          metric_unit: 'cups',
-          is_private: false,
-          recorded_at
-        }));
-      }
-
       await Promise.all(syncPromises);
-      console.log(`[Track] ✅ 已成功同步 ${syncPromises.length} 项数据到云端`);
       
-      setIsSyncedToday(true);
-      
-      // 立即根据最新数据状态触发折叠
-      const currentVitalsCompleted = !!(dailyVitals.weight && dailyVitals.bodyFat !== '' && dailyVitals.muscleMass !== '' && dailyVitals.visceralFat !== '');
-      const currentFeedbackCompleted = dailyFeedback.mood > 0 && dailyFeedback.energy > 0 && dailyFeedback.sleep > 0 && dailyFeedback.bowel > 0;
-      
-      setCollapsedSections(prev => ({
-        ...prev,
-        vitals: currentVitalsCompleted ? true : prev.vitals,
-        feedback: currentFeedbackCompleted ? true : prev.feedback
-      }));
-
-      setTimeout(() => {
-        setIsSyncing(false);
-        isSyncingRef.current = false;
-        alert('已成功同步给您的营养师！');
-      }, 300);
-    } catch (err) {
-      console.error('Sync failed:', err);
-      setIsSyncing(false);
-      isSyncingRef.current = false;
-      alert('同步失败，请检查网络后重试');
-    }
-  };
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const normalizedPhone = loginPhone.replace(/\s|-|\+86/g, '').trim();
-    if (!normalizedPhone) return;
-
-    setIsLoginLoading(true);
-    setLoginError('');
-
-    try {
-      // 模拟专业查询仪式感
-      await new Promise(resolve => setTimeout(resolve, 1200));
-      
-      const foundClient = await cloud.findClientByPhone(normalizedPhone);
-      
-      if (foundClient) {
-        localStorage.setItem('hc_client_id', foundClient.id);
-        localStorage.setItem('hc_client_phone', normalizedPhone);
-        // 登录成功后刷新全局数据，确保拉取到该客户的云端历史
-        await refreshData();
-        setIsVerified(true);
-      } else {
-        setLoginError('未找到该号码，请确认输入正确或联系老师开通');
-        setShowContactNutritionist(true);
-      }
-    } catch (err) {
-      setLoginError('查询失败，请检查网络后重试');
-    } finally {
-      setIsLoginLoading(false);
-    }
-  };
-
-  // PWA Web Push 订阅逻辑
-  const subscribeToPush = async () => {
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
-
-    try {
-      const registration = await navigator.serviceWorker.ready;
-      
-      // 检查是否已有订阅
-      const existingSubscription = await registration.pushManager.getSubscription();
-      if (existingSubscription) {
-        // 如果数据库中没有记录，则更新
-        if (client && !client.push_subscription) {
-          await updateClient(client, { push_subscription: JSON.stringify(existingSubscription) });
-        }
-        return;
-      }
-
-      // 请求权限
-      const permission = await Notification.requestPermission();
-      if (permission !== 'granted') return;
-
-      // 订阅
-      const subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+      // 更新客户状态
+      await updateClient(client, {
+        last_checkin_at: recorded_at,
+        checkin_streak: (client.checkin_streak || 0) + 1,
+        missed_days: 0
       });
 
-      // 存储订阅信息到数据库
-      if (client) {
-        await updateClient(client, { push_subscription: JSON.stringify(subscription) });
-      }
-      console.log('Push Subscription successful');
-    } catch (err) {
-      console.error('Failed to subscribe to push notifications:', err);
+      setIsSyncedToday(true);
+      await refreshData();
+      
+    } catch (error) {
+      console.error('Sync failed:', error);
+      alert('同步失败，请重试');
+    } finally {
+      setIsSyncing(false);
+      isSyncingRef.current = false;
     }
   };
 
-  // 监听 PWA 安装事件
-  useEffect(() => {
-    const handleBeforeInstallPrompt = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-      if (!localStorage.getItem('pwa_guide_dismissed')) {
-        setShowPWAGuide(true);
-      }
+  const toggleTask = async (task: any) => {
+    if (!client) return;
+    if (task.completed && task.log_id) {
+      // 撤销打卡 (库存归还逻辑由 DataContext 内部联动)
+      await deleteCheckinLog(task.log_id);
+    } else {
+      // 幂等打卡
+      const log: CheckinLog = {
+        id: `checkin-${Date.now()}`,
+        client_id: client.id,
+        product_id: task.product_id,
+        time_slot: task.time.toLowerCase(),
+        slot_id: task.slot_id,
+        action_id: task.id,
+        is_taken: true,
+        taken_at: new Date().toISOString(),
+        is_auto_checkin: false
+      };
+      await addCheckinLog(log);
+    }
+  };
+
+  const handleSendFeedback = async () => {
+    if (!client || !newMessage.trim()) return;
+    
+    const feedback: Feedback = {
+      id: `msg-${Date.now()}`,
+      client_id: client.id,
+      practitioner_id: client.practitioner_id,
+      content: newMessage,
+      sender_type: 'client',
+      is_read: false,
+      created_at: new Date().toISOString()
     };
 
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    
-    if (client && !client.push_subscription) {
-      subscribeToPush();
-    }
+    await addFeedback(feedback);
+    setNewMessage('');
+  };
 
-    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-  }, [client]);
+  const handleAddWeight = async () => {
+    if (!client || !newWeight) return;
 
-  // 检测 iOS 且未添加到主屏幕
-  useEffect(() => {
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
-    
-    if (isIOS && !isStandalone && !localStorage.getItem('pwa_guide_dismissed')) {
-      setShowPWAGuide(true);
-    }
-  }, []);
+    const log: WeightLog = {
+      id: `weight-${Date.now()}`,
+      client_id: client.id,
+      weight_kg: parseFloat(newWeight),
+      body_fat_percentage: newBodyFat ? parseFloat(newBodyFat) : undefined,
+      recorded_at: new Date().toISOString(),
+      source: 'manual'
+    };
 
-  // 检测成就达成 (7/14/21天)
-  useEffect(() => {
-    if (!client) return;
-    
-    const streak = client.checkin_streak || 0;
-    const milestones = [7, 14, 21];
-    
-    milestones.forEach(m => {
-      const key = `achievement_shown_${client.id}_streak_${m}`;
-      if (streak >= m && !localStorage.getItem(key)) {
-        setAchievementToShow({ type: 'streak', value: m });
-        localStorage.setItem(key, 'true');
-      }
-    });
-
-    if (weightLogs.length >= 2) {
-      const sortedLogs = [...weightLogs]
-        .filter(l => l.client_id === client.id && l.body_fat_percentage)
-        .sort((a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime());
-      
-      if (sortedLogs.length >= 2) {
-        const firstFat = sortedLogs[0].body_fat_percentage!;
-        const latestFat = sortedLogs[sortedLogs.length - 1].body_fat_percentage!;
-        const reduction = firstFat - latestFat;
-        
-        const key = `achievement_shown_${client.id}_fat_reduction_1`;
-        if (reduction >= 1 && !localStorage.getItem(key)) {
-          setAchievementToShow({ type: 'milestone', value: 1 });
-          localStorage.setItem(key, 'true');
-        }
-      }
-    }
-  }, [client, weightLogs]);
-
-  // 检测失联状态 (Level 1 & Level 2)
-  useEffect(() => {
-    if (!client) return;
-
-    if (client.missed_days && client.missed_days >= 1) {
-      setShowGhostingBanner(true);
-      
-      // Level 2: 48h (missed_days >= 2) - 尝试请求权限并发送本地通知 (模拟 Web Push)
-      if (client.missed_days >= 2) {
-        if ('Notification' in window) {
-          if (Notification.permission === 'default') {
-            Notification.requestPermission();
-          } else if (Notification.permission === 'granted') {
-            // 这里仅作为演示，实际生产中应由服务器推送
-            const lastPushTime = localStorage.getItem(`last_push_${client.id}`);
-            const now = Date.now();
-            // 24小时内不重复推送
-            if (!lastPushTime || (now - parseInt(lastPushTime)) > 86400000) {
-              new Notification('[HealthCare]', {
-                body: '您的专属营养师正在关注您的进度，记得同步今日数据。',
-                icon: 'https://cdn-icons-png.flaticon.com/512/3063/3063822.png'
-              });
-              localStorage.setItem(`last_push_${client.id}`, now.toString());
-            }
-          }
-        }
-      }
-    } else {
-      setShowGhostingBanner(false);
-    }
-  }, [client]);
+    await addWeightLog(log);
+    setIsWeightModalOpen(false);
+    setNewWeight('');
+    setNewBodyFat('');
+  };
 
   // --- 静默验证页 UI ---
   if (isVerified === false) {
@@ -650,7 +795,7 @@ export default function TrackClient({ slug }: { slug: string }) {
           
           {/* Footer info */}
           <p className="text-center text-slate-300 text-[10px] mt-8 uppercase tracking-[0.2em] font-bold">
-            © 2026 HealthCare Technology.
+            © 2026 HealthCare Technology. {APP_VERSION}
           </p>
         </div>
       </div>
@@ -686,94 +831,6 @@ export default function TrackClient({ slug }: { slug: string }) {
     );
   }
 
-  // 客户相关的留言
-  const clientFeedbacks = useMemo(() => {
-    if (!client) return [];
-    return feedbacks.filter(f => f.client_id === client.id).sort((a, b) => 
-      new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-    );
-  }, [feedbacks, client?.id]);
-
-  // 未读消息数
-  const unreadCount = useMemo(() => {
-    return clientFeedbacks.filter(f => f.sender_type === 'practitioner' && !f.is_read).length;
-  }, [clientFeedbacks]);
-
-  // 最新体重记录
-  const latestWeightLog = useMemo(() => {
-    if (!client) return null;
-    const logs = weightLogs.filter(w => w.client_id === client.id);
-    if (logs.length === 0) return null;
-    return logs.sort((a, b) => new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime())[0];
-  }, [weightLogs, client?.id]);
-
-  const toggleTask = async (task: any) => {
-    if (task.completed && task.log_id) {
-      // 撤销打卡 (库存归还逻辑由 DataContext 内部联动)
-      await deleteCheckinLog(task.log_id);
-    } else {
-      // 幂等打卡
-      const log: CheckinLog = {
-        id: `checkin-${Date.now()}`,
-        client_id: client.id,
-        product_id: task.product_id,
-        time_slot: task.time.toLowerCase(),
-        slot_id: task.slot_id,
-        action_id: task.id,
-        is_taken: true,
-        taken_at: new Date().toISOString(),
-        is_auto_checkin: false
-      };
-      await addCheckinLog(log);
-    }
-  };
-
-  const handleSendFeedback = async () => {
-    if (!newMessage.trim()) return;
-    
-    const feedback: Feedback = {
-      id: `msg-${Date.now()}`,
-      client_id: client.id,
-      practitioner_id: client.practitioner_id,
-      content: newMessage,
-      sender_type: 'client',
-      is_read: false,
-      created_at: new Date().toISOString()
-    };
-
-    await addFeedback(feedback);
-    setNewMessage('');
-  };
-
-  const handleAddWeight = async () => {
-    if (!newWeight) return;
-
-    const log: WeightLog = {
-      id: `weight-${Date.now()}`,
-      client_id: client.id,
-      weight_kg: parseFloat(newWeight),
-      body_fat_percentage: newBodyFat ? parseFloat(newBodyFat) : undefined,
-      recorded_at: new Date().toISOString(),
-      source: 'manual'
-    };
-
-    await addWeightLog(log);
-    setIsWeightModalOpen(false);
-    setNewWeight('');
-    setNewBodyFat('');
-  };
-
-  // 进入消息页时，将所有营养师消息标为已读
-  useEffect(() => {
-    if (activeTab === 'messages') {
-      clientFeedbacks.forEach(f => {
-        if (f.sender_type === 'practitioner' && !f.is_read) {
-          updateFeedback(f.id, { is_read: true });
-        }
-      });
-    }
-  }, [activeTab, clientFeedbacks, updateFeedback]);
-
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-32 select-none touch-manipulation overflow-x-hidden">
       {/* 装饰性背景 (统一为 Web 端翡翠绿装饰) */}
@@ -781,7 +838,7 @@ export default function TrackClient({ slug }: { slug: string }) {
       <div className="fixed top-20 -right-20 w-64 h-64 bg-emerald-600/5 rounded-full -z-10 blur-3xl opacity-50" />
       
       {/* 成就勋章弹窗 (Achievement Card Modal) */}
-      {achievementToShow && (
+      {achievementToShow && client && (
         <AchievementCard 
           client={client}
           type={achievementToShow.type}
@@ -824,11 +881,11 @@ export default function TrackClient({ slug }: { slug: string }) {
         <div className="flex items-center justify-between mb-8 relative z-10">
           <div className="flex items-center gap-4">
             <div className="w-14 h-14 bg-slate-900 rounded-[20px] flex items-center justify-center text-xl font-black text-white shadow-xl shadow-slate-200">
-              {client.name[0]}
+              {client.name?.[0] || '?'}
             </div>
             <div className="space-y-0.5">
               <div className="flex items-center gap-2">
-                <h1 className="text-xl font-black tracking-tight text-slate-900">{client.name}</h1>
+                <h1 className="text-xl font-black tracking-tight text-slate-900">{client.name || '健康用户'}</h1>
                 <div className="p-1 bg-emerald-50 rounded-full">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
                 </div>
@@ -846,26 +903,34 @@ export default function TrackClient({ slug }: { slug: string }) {
         </div>
 
         {/* 连续打卡激励条 (统一为 Web 端翡翠绿) */}
-        <div className="bg-slate-50/50 rounded-3xl p-5 flex items-center justify-between border border-slate-50 relative z-10">
-          <div className="flex gap-2.5">
-            {[1, 2, 3, 4, 5, 6, 7].map(day => (
-              <div 
-                key={day} 
-                className={`w-9 h-9 rounded-xl flex items-center justify-center text-[11px] font-black transition-all ${
-                  day <= (client.checkin_streak || 0) 
-                    ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-100' 
-                    : day === (client.checkin_streak || 0) + 1
-                    ? 'bg-white border-2 border-emerald-600 text-emerald-600'
-                    : 'bg-white border border-slate-200 text-slate-300'
-                }`}
-              >
-                {day}
-              </div>
-            ))}
-          </div>
-          <div className="text-right pl-4">
-            <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Next Milestone</div>
-            <div className="text-xs font-black text-emerald-700 mt-0.5">+50 Pts</div>
+        <div className="bg-slate-50/50 rounded-3xl p-5 flex flex-col gap-4 border border-slate-50 relative z-10">
+          <div className="flex items-center justify-between">
+            <div className="flex gap-2.5">
+              {[1, 2, 3, 4, 5, 6, 7].map(day => (
+                <div key={day} className="flex flex-col items-center gap-1.5">
+                  <div 
+                    className={`w-9 h-9 rounded-xl flex items-center justify-center text-[11px] font-black transition-all ${
+                      day <= (client.checkin_streak || 0) 
+                        ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-100' 
+                        : day === (client.checkin_streak || 0) + 1
+                        ? 'bg-white border-2 border-emerald-600 text-emerald-600'
+                        : 'bg-white border border-slate-200 text-slate-300'
+                    }`}
+                  >
+                    {day}
+                  </div>
+                  <div className={`text-[8px] font-black uppercase tracking-tighter ${
+                    day <= (client.checkin_streak || 0) ? 'text-emerald-600' : 'text-slate-300'
+                  }`}>
+                    {getPointsForDay(day)}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="text-right pl-4">
+              <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Next Milestone</div>
+              <div className="text-xs font-black text-emerald-700 mt-0.5">+50 Pts</div>
+            </div>
           </div>
         </div>
       </header>
@@ -970,12 +1035,7 @@ export default function TrackClient({ slug }: { slug: string }) {
 
                   {/* 任务列表 */}
                   <div className="space-y-3">
-                    {tasks.filter(t => {
-                      const slot = t.time === '早起' || t.time === '早餐' ? 'breakfast' : 
-                                   t.time === '午餐' || t.time === '午后' ? 'lunch' : 
-                                   t.time === '晚餐' || t.time === '睡前' ? 'dinner' : 'other';
-                      return slot === activeSlot;
-                    }).map((task: any) => (
+                    {getSlotTasks(activeSlot).map((task: any) => (
                       <div 
                         key={task.id}
                         onClick={() => toggleTask(task)}
@@ -1294,46 +1354,85 @@ export default function TrackClient({ slug }: { slug: string }) {
         )}
 
         {activeTab === 'me' && (
-          <div className="flex flex-col items-center justify-center py-24 text-slate-200 space-y-6">
-            <div className="w-20 h-20 bg-slate-50 rounded-[32px] flex items-center justify-center">
-              <User className="w-10 h-10 opacity-20" />
+          <div className="flex flex-col items-center p-6 space-y-10">
+            {/* 个人信息卡片 */}
+            <div className="w-full bg-white rounded-[40px] p-8 border border-slate-100 shadow-sm flex flex-col items-center gap-6">
+              <div className="w-24 h-24 bg-slate-50 rounded-[32px] flex items-center justify-center relative group">
+                <User className="w-12 h-12 text-slate-300" />
+                <div className="absolute inset-0 rounded-[32px] border-2 border-emerald-500/0 group-hover:border-emerald-500/10 transition-all" />
+              </div>
+              
+              <div className="text-center space-y-2">
+                <h3 className="text-xl font-black text-slate-900">{client?.name || '用户'}</h3>
+                <p className="text-xs font-bold text-slate-400 tracking-widest uppercase">{client?.phone || '手机号未绑定'}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 w-full pt-6 border-t border-slate-50">
+                <div className="text-center">
+                  <div className="text-[10px] font-black text-slate-300 uppercase tracking-widest mb-1">坚持天数</div>
+                  <div className="text-lg font-black text-slate-900">{client?.checkin_streak || 0} 天</div>
+                </div>
+                <div className="text-center border-l border-slate-50">
+                  <div className="text-[10px] font-black text-slate-300 uppercase tracking-widest mb-1">累计积分</div>
+                  <div className="text-lg font-black text-emerald-600">{client?.loyalty_points || 0} PTS</div>
+                </div>
+              </div>
             </div>
-            <p className="text-[11px] font-black uppercase tracking-[0.2em] text-center text-slate-300 leading-relaxed">个人档案管理建设中...</p>
+
+            {/* 设置项 */}
+            <div className="w-full space-y-3">
+              <div className="bg-slate-50/50 rounded-[32px] p-4 text-center">
+                <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em]">个人档案管理建设中...</p>
+              </div>
+              
+              <button 
+                onClick={handleLogout}
+                className="w-full flex items-center justify-center gap-3 p-6 bg-rose-50 text-rose-600 rounded-[32px] font-black text-xs uppercase tracking-widest active:scale-[0.98] transition-all hover:bg-rose-100"
+              >
+                <LogOut className="w-4 h-4" />
+                退出当前账号
+              </button>
+            </div>
           </div>
         )}
       </main>
 
       {/* 底部导航栏 (统一为 Web 端风格) */}
       <nav className="fixed bottom-0 left-0 right-0 px-6 pb-8 pt-4 bg-white/80 backdrop-blur-xl border-t border-slate-100 z-50 shadow-[0_-8px_30px_rgba(0,0,0,0.04)]">
-        <div className="max-w-md mx-auto flex justify-around items-center relative">
-          {[
-            { id: 'today', icon: Zap, label: '今日' },
-            { id: 'trends', icon: TrendingUp, label: '趋势' },
-            { id: 'messages', icon: MessageSquare, label: '咨询', badge: unreadCount },
-            { id: 'me', icon: Activity, label: '我的' }
-          ].map((item) => (
-            <button 
-              key={item.id} 
-              onClick={() => setActiveTab(item.id as any)} 
-              className={`flex flex-col items-center gap-1.5 transition-all duration-300 relative group ${
-                activeTab === item.id 
-                ? 'text-emerald-600' 
-                : 'text-slate-400 hover:text-slate-600'
-              }`}
-            >
-              <div className={`p-2 rounded-xl transition-all duration-300 ${activeTab === item.id ? 'bg-emerald-50 shadow-sm shadow-emerald-100/50 scale-110' : 'group-active:scale-90'}`}>
-                <item.icon className={`w-5 h-5 ${activeTab === item.id ? 'stroke-[2.5px]' : 'stroke-[2px]'}`} />
-              </div>
-              <span className={`text-[10px] font-black tracking-tight transition-colors ${activeTab === item.id ? 'text-emerald-700' : 'text-slate-400'}`}>
-                {item.label}
-              </span>
-              {item.badge ? (
-                <span className="absolute top-0 right-0 w-4 h-4 bg-rose-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center border-2 border-white shadow-sm">
-                  {item.badge}
+        <div className="max-w-md mx-auto flex flex-col items-center gap-4">
+          <div className="w-full flex justify-around items-center relative">
+            {[
+              { id: 'today', icon: Zap, label: '今日' },
+              { id: 'trends', icon: TrendingUp, label: '趋势' },
+              { id: 'messages', icon: MessageSquare, label: '咨询', badge: unreadCount },
+              { id: 'me', icon: Activity, label: '我的' }
+            ].map((item) => (
+              <button 
+                key={item.id} 
+                onClick={() => setActiveTab(item.id as any)} 
+                className={`flex flex-col items-center gap-1.5 transition-all duration-300 relative group ${
+                  activeTab === item.id 
+                  ? 'text-emerald-600' 
+                  : 'text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                <div className={`p-2 rounded-xl transition-all duration-300 ${activeTab === item.id ? 'bg-emerald-50 shadow-sm shadow-emerald-100/50 scale-110' : 'group-active:scale-90'}`}>
+                  <item.icon className={`w-5 h-5 ${activeTab === item.id ? 'stroke-[2.5px]' : 'stroke-[2px]'}`} />
+                </div>
+                <span className={`text-[10px] font-black tracking-tight transition-colors ${activeTab === item.id ? 'text-emerald-700' : 'text-slate-400'}`}>
+                  {item.label}
                 </span>
-              ) : null}
-            </button>
-          ))}
+                {item.badge ? (
+                  <span className="absolute top-0 right-0 w-4 h-4 bg-rose-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center border-2 border-white shadow-sm">
+                    {item.badge}
+                  </span>
+                ) : null}
+              </button>
+            ))}
+          </div>
+          <div className="text-[8px] font-bold text-slate-300 uppercase tracking-widest opacity-50">
+            © 2026 HealthCare Tech · {APP_VERSION}
+          </div>
         </div>
       </nav>
 

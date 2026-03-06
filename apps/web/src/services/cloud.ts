@@ -201,6 +201,47 @@ export class CloudService {
     return null;
   }
 
+  /**
+   * 通过 Slug 查找客户 (用于登录验证)
+   */
+  public async findClientBySlug(slug: string): Promise<any | null> {
+    const normalizedSlug = slug.trim();
+    if (!normalizedSlug) return null;
+
+    // 1. 优先从云端查找 (如果已配置)
+    if (this.isConfigured && this.supabase) {
+      try {
+        console.log(`[Cloud] 正在通过 Slug 查询客户: ${normalizedSlug}...`);
+        const { data, error } = await this.supabase
+          .from('clients')
+          .select('*')
+          .eq('slug', normalizedSlug)
+          .maybeSingle();
+
+        if (error) throw error;
+        
+        if (data) {
+          console.log(`[Cloud] ✅ 云端 Slug 查询成功: ${data.name}`);
+          return data;
+        }
+      } catch (error: any) {
+        console.error(`[Cloud] ❌ 云端 Slug 查询失败:`, error.message);
+      }
+    }
+
+    // 2. 降级方案：从本地 localStorage 查找 (包含 Mock 数据)
+    console.log(`[Cloud] ℹ️ 尝试从本地数据查找 Slug: ${normalizedSlug}`);
+    const clients = this.getLocal('clients');
+    const localClient = clients.find((c: any) => (c.slug || '').trim() === normalizedSlug);
+    
+    if (localClient) {
+      console.log(`[Cloud] ✅ 本地 Slug 查询成功: ${localClient.name}`);
+      return localClient;
+    }
+
+    return null;
+  }
+
   // --- Helper Methods ---
 
   private getLocal(collectionName: string): any[] {

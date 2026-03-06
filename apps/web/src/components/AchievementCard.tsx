@@ -19,9 +19,9 @@ export const AchievementCard: React.FC<AchievementCardProps> = ({
   const cardRef = useRef<HTMLDivElement>(null);
   const [isGenerating, setIsGenerating] = useState(false);
 
-  const desensitizedName = client.name.length > 1 
+  const desensitizedName = (client?.name || '').length > 1 
     ? client.name[0] + '＊' + (client.name.length > 2 ? client.name[client.name.length - 1] : '')
-    : client.name;
+    : (client?.name || '健康用户');
 
   const handleDownload = async () => {
     if (!cardRef.current) return;
