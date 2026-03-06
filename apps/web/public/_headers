@@ -5,12 +5,12 @@
   Expires: 0
 
 # PWA 核心配置文件禁止缓存
-/manifest-v12.json
+/manifest-v14.json
   Cache-Control: no-cache, no-store, must-revalidate
   Access-Control-Allow-Origin: *
 
 # Service Worker 禁止缓存
-/sw.js
+/sw-v14.js
   Cache-Control: no-cache, no-store, must-revalidate
   Service-Worker-Allowed: /
 

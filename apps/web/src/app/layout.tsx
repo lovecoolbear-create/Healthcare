@@ -10,19 +10,20 @@ const inter = Inter({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: "HealthCare Practitioner Dashboard",
   description: "Productivity tool for nutritionists",
-  manifest: "/manifest-v12.json?v=FINAL_V5",
+  manifest: "/manifest-v14.json?v=V14_FINAL",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "HC Pro V12",
+    title: "HC Pro V14",
   },
   other: {
-    "version": "1.2.0-FINAL-V5",
+    "version": "1.2.1-V14",
     "apple-mobile-web-app-capable": "yes",
     "mobile-web-app-capable": "yes",
-    "cache-control": "no-cache, no-store, must-revalidate",
+    "cache-control": "no-cache, no-store, must-revalidate, proxy-revalidate",
     "pragma": "no-cache",
-    "expires": "0"
+    "expires": "0",
+    "surrogate-control": "no-store"
   }
 };
 
@@ -36,6 +37,29 @@ export default function RootLayout({
   return (
     <html lang="zh-CN">
       <head>
+        <meta httpEquiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+        <meta httpEquiv="Pragma" content="no-cache" />
+        <meta httpEquiv="Expires" content="0" />
+        <Script id="cache-buster" strategy="beforeInteractive">
+          {`
+            // 如果 URL 中包含 clear=true，强制清理所有缓存
+            if (window.location.search.includes('clear=true')) {
+              localStorage.clear();
+              if ('caches' in window) {
+                caches.keys().then(function(names) {
+                  for (let name of names) caches.delete(name);
+                });
+              }
+              if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.getRegistrations().then(function(regs) {
+                  for (let reg of regs) reg.unregister();
+                });
+              }
+              // 清理完后去掉参数重新加载，防止死循环
+              window.location.href = window.location.pathname;
+            }
+          `}
+        </Script>
         <Script id="sw-registration" strategy="afterInteractive">
           {`
             // 彻底清理并停用旧的 Service Worker
@@ -49,8 +73,8 @@ export default function RootLayout({
               
               // 重新注册一个只管清缓存的 SW
               window.addEventListener('load', function() {
-                navigator.serviceWorker.register('/sw.js?v=V5_FINAL').then(function(reg) {
-                  console.log('New SW registered');
+                navigator.serviceWorker.register('/sw-v14.js?v=V14_FORCE_' + Date.now()).then(function(reg) {
+                  console.log('New V14 SW registered');
                 });
               });
             }

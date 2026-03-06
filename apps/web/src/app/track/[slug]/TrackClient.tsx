@@ -57,7 +57,52 @@ export default function TrackClient({ slug }: { slug: string }) {
     calibrateInventory
   } = useData();
 
-  const APP_VERSION = 'v1.2.0-FINAL';
+  const APP_VERSION = 'v1.2.1-V14';
+  
+  // 强制版本校验逻辑
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      // 如果 slug 是我们的强制刷新标识，强制执行清理逻辑
+      if (slug === 'v14-force-sync') {
+        localStorage.clear();
+        if ('caches' in window) {
+          caches.keys().then(names => {
+            for (let name of names) caches.delete(name);
+          });
+        }
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistrations().then(registrations => {
+            for (let registration of registrations) registration.unregister();
+          });
+        }
+        // 重定向回正常的 track 页面
+        window.location.href = '/track?v=V14_RELOADED';
+        return;
+      }
+
+      const storedVersion = localStorage.getItem('hc_app_version');
+      if (storedVersion !== APP_VERSION) {
+        console.log('Version mismatch, forcing reload...', storedVersion, '->', APP_VERSION);
+        localStorage.setItem('hc_app_version', APP_VERSION);
+        
+        // 如果不是第一次运行（即 storedVersion 有值且不符），强制刷新
+        if (storedVersion) {
+          // 清理所有缓存并刷新
+          if ('caches' in window) {
+            caches.keys().then(names => {
+              for (let name of names) caches.delete(name);
+            });
+          }
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(registrations => {
+              for (let registration of registrations) registration.unregister();
+            });
+          }
+          window.location.reload();
+        }
+      }
+    }
+  }, []);
   
   const [activeTab, setActiveTab] = useState<'today' | 'trends' | 'messages' | 'me'>('today');
   const [activeSlot, setActiveSlot] = useState<string>('breakfast');
@@ -829,10 +874,35 @@ export default function TrackClient({ slug }: { slug: string }) {
               )}
             </form>
 
-            <div className="mt-8 pt-6 border-t border-slate-50 text-center">
+            <div className="mt-8 pt-6 border-t border-slate-50 text-center space-y-4">
               <p className="text-[10px] text-slate-400 font-medium tracking-tight">
                 数据受 SSL 加密保护 · 仅限本人授权访问
               </p>
+              
+              {/* 紧急修复按钮 */}
+              <button 
+                type="button"
+                onClick={() => {
+                  if (confirm('确定要执行紧急修复吗？这将清除所有本地缓存并强制刷新，用于解决界面显示旧版的问题。')) {
+                    if ('serviceWorker' in navigator) {
+                      navigator.serviceWorker.getRegistrations().then(registrations => {
+                        for (let registration of registrations) registration.unregister();
+                      });
+                    }
+                    if ('caches' in window) {
+                      caches.keys().then(names => {
+                        for (let name of names) caches.delete(name);
+                      });
+                    }
+                    localStorage.clear();
+                    window.location.reload();
+                  }
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-50 border border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-100 transition-all"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
+                界面显示异常？点击紧急修复
+              </button>
             </div>
           </div>
           
@@ -868,42 +938,12 @@ export default function TrackClient({ slug }: { slug: string }) {
               <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
               <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
             </div>
-          {/* 底部版本信息与强制刷新 */}
-            <div className="mt-12 mb-8 text-center space-y-2">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 border border-slate-200">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                  Version 1.2.0 (FINAL-V5)
-                </span>
-              </div>
-              <button 
-                onClick={() => {
-                  if (confirm('确定要强制刷新并清除缓存吗？这通常能解决界面显示旧版的问题。')) {
-                    if ('serviceWorker' in navigator) {
-                      navigator.serviceWorker.getRegistrations().then(registrations => {
-                        for (let registration of registrations) registration.unregister();
-                      });
-                    }
-                    if ('caches' in window) {
-                      caches.keys().then(names => {
-                        for (let name of names) caches.delete(name);
-                      });
-                    }
-                    localStorage.clear();
-                    window.location.reload(true);
-                  }
-                }}
-                className="block w-full text-[10px] font-black text-emerald-600/50 uppercase tracking-widest hover:text-emerald-600 transition-colors"
-              >
-                界面显示异常？点击强制刷新
-              </button>
-            </div>
           </div>
         </div>
       </div>
-    </div>
-  );
-}
+    );
+  }
+  
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-32 select-none touch-manipulation overflow-x-hidden">
       {/* 装饰性背景 (统一为 Web 端翡翠绿装饰) */}
@@ -1406,7 +1446,7 @@ export default function TrackClient({ slug }: { slug: string }) {
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 border border-slate-200">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                  Version 1.2.0 (FINAL-V5)
+                  Version 1.2.1-V13
                 </span>
               </div>
               <button 
