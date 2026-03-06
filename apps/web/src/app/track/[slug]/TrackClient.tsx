@@ -28,7 +28,9 @@ import {
   Droplets,
   ClipboardList,
   Upload,
-  LogOut
+  LogOut,
+  MessageCircle,
+  CloudSun
 } from 'lucide-react';
 import { useData } from '../../../context/DataContext';
 import { Feedback, WeightLog, CheckinLog } from '@healthcare/shared';
@@ -51,14 +53,18 @@ export default function TrackClient({ slug }: { slug: string }) {
     updateClient,
     refreshData,
     addHealthMetric,
-    triggers
+    triggers,
+    calibrateInventory
   } = useData();
 
-  const APP_VERSION = 'v1.0.5';
+  const APP_VERSION = 'v1.2.0-FINAL';
   
   const [activeTab, setActiveTab] = useState<'today' | 'trends' | 'messages' | 'me'>('today');
   const [activeSlot, setActiveSlot] = useState<string>('breakfast');
   const [isWeightModalOpen, setIsWeightModalOpen] = useState(false);
+  const [isCalibrateModalOpen, setIsCalibrateModalOpen] = useState(false);
+  const [calibratingProduct, setCalibratingProduct] = useState<any>(null);
+  const [calibrationStock, setCalibrationStock] = useState('');
   const [newWeight, setNewWeight] = useState('');
   const [newBodyFat, setNewBodyFat] = useState('');
   const [newMessage, setNewMessage] = useState('');
@@ -70,12 +76,12 @@ export default function TrackClient({ slug }: { slug: string }) {
   }, [triggers]);
 
   const getPointsForDay = (day: number) => {
-    const rules = checkinRules.filter(r => r.condition.threshold === day);
-    if (rules.length === 0) return null;
+    // 每天 1 分，第 3 天额外 +1，第 7 天额外 +2
+    let points = 1;
+    if (day === 3) points += 1;
+    if (day === 7) points += 2;
     
-    // Sum up points from all matching rules for this day
-    const totalPoints = rules.reduce((sum, r) => sum + parseInt(r.action.payload_template || '0'), 0);
-    return totalPoints > 0 ? (day === 1 ? `${totalPoints}pt` : `+${totalPoints}pt${totalPoints > 1 ? 's' : ''}`) : null;
+    return day === 1 ? `${points}pt` : `+${points}pt`;
   };
 
   // --- 登录/验证状态 ---
@@ -119,6 +125,13 @@ export default function TrackClient({ slug }: { slug: string }) {
   }, [clients, slug]);
 
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const formattedDate = useMemo(() => {
+    return new Date().toLocaleDateString('zh-CN', { 
+      month: 'long', 
+      day: 'numeric', 
+      weekday: 'long' 
+    });
+  }, []);
 
   // 2. 数据相关 Hooks
   const clientFeedbacks = useMemo(() => {
@@ -626,12 +639,32 @@ export default function TrackClient({ slug }: { slug: string }) {
         }));
       }
 
+      // 3. 同步饮水数据
+      if (waterIntake > 0) {
+        syncPromises.push(addHealthMetric({
+          id: `metric-water-${Date.now()}`,
+          client_id: client.id,
+          metric_type: 'WaterIntake',
+          metric_value: waterIntake * 250, // 转换为 ML
+          metric_unit: 'ml',
+          is_private: false,
+          recorded_at
+        }));
+      }
+
       await Promise.all(syncPromises);
       
+      // 计算积分: 每天 1 分，第 3 天额外 +1，第 7 天额外 +2
+      const currentStreak = (client.checkin_streak || 0) + 1;
+      let pointsToAdd = 1;
+      if (currentStreak === 3) pointsToAdd += 1;
+      if (currentStreak === 7) pointsToAdd += 2;
+
       // 更新客户状态
       await updateClient(client, {
         last_checkin_at: recorded_at,
-        checkin_streak: (client.checkin_streak || 0) + 1,
+        checkin_streak: currentStreak,
+        loyalty_points: (client.loyalty_points || 0) + pointsToAdd,
         missed_days: 0
       });
 
@@ -702,6 +735,16 @@ export default function TrackClient({ slug }: { slug: string }) {
     setIsWeightModalOpen(false);
     setNewWeight('');
     setNewBodyFat('');
+  };
+
+  const handleCalibrateInventory = async () => {
+    if (!client || !calibratingProduct || !calibrationStock) return;
+    
+    await calibrateInventory(client.id, calibratingProduct.id, parseFloat(calibrationStock));
+    setIsCalibrateModalOpen(false);
+    setCalibratingProduct(null);
+    setCalibrationStock('');
+    await refreshData();
   };
 
   // --- 静默验证页 UI ---
@@ -875,41 +918,41 @@ export default function TrackClient({ slug }: { slug: string }) {
       )}
 
       {/* 头部：客户激励看板 (统一为 Web 端风格) */}
-      <header className="bg-white p-6 pb-8 rounded-b-[48px] shadow-sm border-b border-slate-100 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-50 rounded-full -mr-16 -mt-16 opacity-50" />
+      <header className="bg-white p-4 pb-4 rounded-b-[32px] shadow-sm border-b border-slate-100 relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-50 rounded-full -mr-12 -mt-12 opacity-50" />
         
-        <div className="flex items-center justify-between mb-8 relative z-10">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 bg-slate-900 rounded-[20px] flex items-center justify-center text-xl font-black text-white shadow-xl shadow-slate-200">
+        <div className="flex items-center justify-between mb-4 relative z-10">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-slate-900 rounded-[16px] flex items-center justify-center text-lg font-black text-white shadow-xl shadow-slate-200">
               {client.name?.[0] || '?'}
             </div>
-            <div className="space-y-0.5">
-              <div className="flex items-center gap-2">
-                <h1 className="text-xl font-black tracking-tight text-slate-900">{client.name || '健康用户'}</h1>
-                <div className="p-1 bg-emerald-50 rounded-full">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+            <div className="space-y-0">
+              <div className="flex items-center gap-1.5">
+                <h1 className="text-lg font-black tracking-tight text-slate-900">{client.name || '健康用户'}</h1>
+                <div className="p-0.5 bg-emerald-50 rounded-full">
+                  <ShieldCheck className="w-3 h-3 text-emerald-600" />
                 </div>
               </div>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Protocol Day {(client.checkin_streak || 0) + 1}</p>
+              <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.1em]">Protocol Day {(client.checkin_streak || 0) + 1}</p>
             </div>
           </div>
           <div className="flex flex-col items-end">
-            <div className="flex items-center gap-1.5 text-amber-500 bg-amber-50 px-3 py-1.5 rounded-2xl border border-amber-100/50">
-              <Award className="w-4 h-4" />
-              <span className="text-lg font-black tabular-nums">{client.loyalty_points || 0}</span>
+            <div className="flex items-center gap-1 text-amber-500 bg-amber-50 px-2.5 py-1 rounded-xl border border-amber-100/50">
+              <Award className="w-3.5 h-3.5" />
+              <span className="text-base font-black tabular-nums">{client.loyalty_points || 0}</span>
             </div>
-            <span className="text-[8px] font-black text-slate-300 uppercase tracking-widest mt-1 mr-1">Points</span>
+            <span className="text-[7px] font-black text-slate-300 uppercase tracking-widest mt-0.5 mr-0.5">Points</span>
           </div>
         </div>
 
         {/* 连续打卡激励条 (统一为 Web 端翡翠绿) */}
-        <div className="bg-slate-50/50 rounded-3xl p-5 flex flex-col gap-4 border border-slate-50 relative z-10">
+        <div className="bg-slate-50/50 rounded-xl p-1.5 flex flex-col gap-1.5 border border-slate-50 relative z-10">
           <div className="flex items-center justify-between">
-            <div className="flex gap-2.5">
+            <div className="flex gap-1">
               {[1, 2, 3, 4, 5, 6, 7].map(day => (
-                <div key={day} className="flex flex-col items-center gap-1.5">
+                <div key={day} className="flex flex-col items-center gap-0.5">
                   <div 
-                    className={`w-9 h-9 rounded-xl flex items-center justify-center text-[11px] font-black transition-all ${
+                    className={`w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black transition-all ${
                       day <= (client.checkin_streak || 0) 
                         ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-100' 
                         : day === (client.checkin_streak || 0) + 1
@@ -919,7 +962,7 @@ export default function TrackClient({ slug }: { slug: string }) {
                   >
                     {day}
                   </div>
-                  <div className={`text-[8px] font-black uppercase tracking-tighter ${
+                  <div className={`text-[6px] font-black uppercase tracking-tighter ${
                     day <= (client.checkin_streak || 0) ? 'text-emerald-600' : 'text-slate-300'
                   }`}>
                     {getPointsForDay(day)}
@@ -927,17 +970,19 @@ export default function TrackClient({ slug }: { slug: string }) {
                 </div>
               ))}
             </div>
-            <div className="text-right pl-4">
-              <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Next Milestone</div>
-              <div className="text-xs font-black text-emerald-700 mt-0.5">+50 Pts</div>
+            <div className="flex flex-col items-end pl-1.5 border-l border-slate-100 min-w-[40px]">
+              <div className="flex items-center gap-1">
+                <span className="text-[8px] font-black text-slate-400 uppercase tracking-tight whitespace-nowrap">本周积分</span>
+                <span className="text-xs font-black text-emerald-700 tabular-nums leading-none">{client.loyalty_points || 0}</span>
+              </div>
             </div>
           </div>
         </div>
       </header>
 
-      <main className="p-6 space-y-10 relative">
+      <main className="p-4 space-y-2.5 relative">
         {activeTab === 'today' && (
-          <div className="space-y-6">
+          <div className="space-y-2.5">
             {/* 未读消息悬浮提示 (统一为 Web 端深色气泡) */}
             {unreadCount > 0 && (
               <button 
@@ -953,78 +998,94 @@ export default function TrackClient({ slug }: { slug: string }) {
               </button>
             )}
 
-            {/* 0. 饮水追踪 (Water Intake - 统一为 Web 端风格) */}
-            <div className="bg-white rounded-[32px] p-6 border border-slate-100 shadow-sm flex items-center justify-between group active:scale-[0.98] transition-all">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-cyan-50 text-cyan-600 flex items-center justify-center shadow-lg shadow-cyan-100/50">
-                  <Droplets className="w-6 h-6" />
+            {/* 0. 日期与天气展示 */}
+            <div className="bg-white rounded-3xl p-3 border border-slate-100 shadow-sm flex items-center justify-between group">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center shadow-lg shadow-amber-100/50">
+                  <CloudSun className="w-5 h-5" />
                 </div>
                 <div>
-                  <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">今日饮水量</div>
-                  <div className="flex items-baseline gap-1.5">
-                    <span className="text-2xl font-black text-slate-900 tabular-nums">{waterIntake * 250}</span>
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">ML / {waterTarget * 250} ML</span>
+                  <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">{formattedDate}</div>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-xl font-black text-slate-900 tabular-nums">22℃</span>
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">多云 · 适宜户外</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 0.5 饮水追踪 (Water Intake - 统一为 Web 端风格) */}
+            <div className="bg-white rounded-3xl p-3 border border-slate-100 shadow-sm flex items-center justify-between group active:scale-[0.98] transition-all">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-cyan-50 text-cyan-600 flex items-center justify-center shadow-lg shadow-cyan-100/50">
+                  <Droplets className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">今日饮水量</div>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-xl font-black text-slate-900 tabular-nums">{waterIntake * 250}</span>
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">ML / {waterTarget * 250} ML</span>
                   </div>
                 </div>
               </div>
               <div className="flex items-center gap-2">
                 <button 
                   onClick={() => setWaterIntake(Math.max(0, waterIntake - 1))}
-                  className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-50 text-slate-400 active:bg-slate-100 active:text-slate-600 transition-all"
+                  className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-50 text-slate-400 active:bg-slate-100 active:text-slate-600 transition-all"
                 >
-                  <Minus className="w-4 h-4" />
+                  <Minus className="w-3.5 h-3.5" />
                 </button>
                 <button 
                   onClick={() => setWaterIntake(waterIntake + 1)}
-                  className="w-10 h-10 flex items-center justify-center rounded-xl bg-cyan-600 text-white shadow-lg shadow-cyan-200 active:scale-90 transition-all"
+                  className="w-8 h-8 flex items-center justify-center rounded-lg bg-cyan-600 text-white shadow-lg shadow-cyan-200 active:scale-90 transition-all"
                 >
-                  <Plus className="w-4 h-4" />
+                  <Plus className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>
 
             {/* 1. 今日方案执行 (Task List) */}
-            <div className={`bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden transition-all duration-500 ${
+            <div className={`bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden transition-all duration-500 ${
               isPlanCompleted ? 'opacity-90' : ''
             }`}>
               <button 
                 onClick={() => setCollapsedSections(prev => ({ ...prev, plan: !prev.plan }))}
-                className={`w-full px-6 py-5 flex items-center justify-between group transition-colors ${
+                className={`w-full px-5 py-3 flex items-center justify-between group transition-colors ${
                   isPlanCompleted ? 'bg-slate-50/50' : 'active:bg-emerald-50'
                 }`}
               >
-                <div className="flex items-center gap-4">
-                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all ${
+                <div className="flex items-center gap-3">
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
                     isPlanCompleted 
                       ? 'bg-slate-200 text-slate-500 shadow-none' 
                       : 'bg-white text-emerald-600 shadow-sm border border-emerald-100'
                   }`}>
-                    {isPlanCompleted ? <CheckCircle2 className="w-5 h-5" /> : <ClipboardList className="w-5 h-5" />}
+                    {isPlanCompleted ? <CheckCircle2 className="w-4 h-4" /> : <ClipboardList className="w-4 h-4" />}
                   </div>
                   <div className="text-left">
-                    <h3 className={`text-sm font-black uppercase tracking-wider ${isPlanCompleted ? 'text-slate-400' : 'text-slate-900'}`}>今日健康计划</h3>
-                    <p className={`text-[10px] font-bold uppercase tracking-widest ${isPlanCompleted ? 'text-slate-400' : 'text-slate-400'}`}>
+                    <h3 className={`text-[13px] font-black uppercase tracking-wider ${isPlanCompleted ? 'text-slate-400' : 'text-slate-900'}`}>今日健康计划</h3>
+                    <p className={`text-[9px] font-bold uppercase tracking-widest ${isPlanCompleted ? 'text-slate-400' : 'text-slate-400'}`}>
                       {isPlanCompleted ? '今日任务已全部完成' : `${tasks.filter((t: any) => t.completed).length}/${tasks.length} 已完成`}
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
                   {isPlanCompleted && (
-                    <span className="text-[10px] font-black text-slate-400 bg-slate-100 px-2 py-1 rounded-lg uppercase tracking-widest border border-slate-200">已完成</span>
+                    <span className="text-[9px] font-black text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-md uppercase tracking-widest border border-slate-200">已完成</span>
                   )}
-                  {collapsedSections.plan ? <ChevronDown className="w-5 h-5 text-slate-300" /> : <ChevronUp className="w-5 h-5 text-slate-300" />}
+                  {collapsedSections.plan ? <ChevronDown className="w-4 h-4 text-slate-300" /> : <ChevronUp className="w-4 h-4 text-slate-300" />}
                 </div>
               </button>
               
               {!collapsedSections.plan && (
-                <div className="px-6 pb-6 space-y-4 animate-in slide-in-from-top-2 duration-300">
+                <div className="px-5 pb-5 space-y-3 animate-in slide-in-from-top-2 duration-300">
                   {/* 时段切换 */}
-                  <div className="flex bg-slate-50/80 p-1 rounded-2xl">
+                  <div className="flex bg-slate-50/80 p-0.5 rounded-xl">
                     {['breakfast', 'lunch', 'dinner'].map((slot) => (
                       <button
                         key={slot}
                         onClick={() => setActiveSlot(slot)}
-                        className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${
+                        className={`flex-1 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-lg transition-all ${
                           activeSlot === slot ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'
                         }`}
                       >
@@ -1034,35 +1095,80 @@ export default function TrackClient({ slug }: { slug: string }) {
                   </div>
 
                   {/* 任务列表 */}
-                  <div className="space-y-3">
+                  <div className="space-y-2">
                     {getSlotTasks(activeSlot).map((task: any) => (
                       <div 
                         key={task.id}
-                        onClick={() => toggleTask(task)}
-                        className={`group flex items-center justify-between p-4 rounded-2xl border transition-all cursor-pointer active:scale-[0.98] ${
+                        className={`group flex flex-col p-3 rounded-xl border transition-all ${
                           task.completed 
                             ? 'bg-slate-50/50 border-slate-100/50' 
-                            : 'bg-white border-slate-100 hover:border-emerald-200 shadow-sm'
+                            : 'bg-white border-slate-100 shadow-sm'
                         }`}
                       >
-                        <div className="flex items-center gap-3">
-                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
-                            task.completed ? 'bg-emerald-500 text-white' : 'bg-slate-50 text-slate-400'
-                          }`}>
-                            {task.completed ? <Check className="w-5 h-5 stroke-[3]" /> : <task.icon className="w-5 h-5" />}
-                          </div>
-                          <div>
-                            <h4 className={`text-sm font-black uppercase tracking-wide transition-all ${
-                              task.completed ? 'text-slate-400 line-through' : 'text-slate-700'
+                        <div className="flex items-center justify-between">
+                          <div 
+                            onClick={() => toggleTask(task)}
+                            className="flex items-center gap-3 cursor-pointer active:scale-[0.98] flex-1"
+                          >
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                              task.completed ? 'bg-emerald-500 text-white' : 'bg-slate-50 text-slate-400'
                             }`}>
-                              {task.label}
-                            </h4>
+                              {task.completed ? <Check className="w-4 h-4 stroke-[3]" /> : <task.icon className="w-4 h-4" />}
+                            </div>
+                            <div>
+                              <h4 className={`text-[13px] font-black uppercase tracking-wide transition-all ${
+                                task.completed ? 'text-slate-400 line-through' : 'text-slate-700'
+                              }`}>
+                                {task.label}
+                              </h4>
+                            </div>
+                          </div>
+                          <div 
+                            onClick={() => toggleTask(task)}
+                            className={`w-5 h-5 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+                            task.completed ? 'bg-emerald-500 text-white' : 'border-2 border-slate-100'
+                          }`}>
+                            {task.completed && <Check className="w-3 h-3 stroke-[3]" />}
                           </div>
                         </div>
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-all ${
-                          task.completed ? 'bg-emerald-500 text-white' : 'border-2 border-slate-100'
-                        }`}>
-                          {task.completed && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+
+                        {/* 库存状态显示 */}
+                        <div className="mt-2.5 pt-2.5 border-t border-slate-50 flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            {client?.inventory_status?.find(i => i.product_id === task.product_id) ? (
+                              <>
+                                <div className={`w-1 h-1 rounded-full ${
+                                  (client.inventory_status.find(i => i.product_id === task.product_id)?.remaining_days || 0) < 3 ? 'bg-rose-500 animate-pulse' : 
+                                  (client.inventory_status.find(i => i.product_id === task.product_id)?.remaining_days || 0) < 7 ? 'bg-amber-500' : 'bg-emerald-500'
+                                }`} />
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">
+                                  剩余可用: <span className={
+                                    (client.inventory_status.find(i => i.product_id === task.product_id)?.remaining_days || 0) < 3 ? 'text-rose-600' : 
+                                    (client.inventory_status.find(i => i.product_id === task.product_id)?.remaining_days || 0) < 7 ? 'text-amber-600' : 'text-emerald-600'
+                                  }>
+                                    {client.inventory_status.find(i => i.product_id === task.product_id)?.remaining_days} 天
+                                  </span>
+                                </span>
+                              </>
+                            ) : (
+                              <>
+                                <div className="w-1 h-1 rounded-full bg-slate-200" />
+                                <span className="text-[10px] font-bold text-slate-300 uppercase tracking-tight">暂无库存数据</span>
+                              </>
+                            )}
+                          </div>
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const inv = client?.inventory_status?.find(i => i.product_id === task.product_id);
+                              setCalibratingProduct(products.find(p => p.id === task.product_id));
+                              setCalibrationStock(inv ? inv.current_stock.toString() : '');
+                              setIsCalibrateModalOpen(true);
+                            }}
+                            className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md uppercase tracking-widest hover:bg-emerald-100 transition-colors"
+                          >
+                            {client?.inventory_status?.find(i => i.product_id === task.product_id) ? '校准库存' : '录入库存'}
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -1072,55 +1178,55 @@ export default function TrackClient({ slug }: { slug: string }) {
             </div>
 
             {/* 2. 今日健康数据 (Vitals) */}
-            <div className={`bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden transition-all duration-500 ${
+            <div className={`bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden transition-all duration-500 ${
               isVitalsCompleted ? 'opacity-90' : ''
             }`}>
               <button 
                 onClick={() => setCollapsedSections(prev => ({ ...prev, vitals: !prev.vitals }))}
-                className={`w-full px-6 py-5 flex items-center justify-between group transition-colors ${
+                className={`w-full px-5 py-3 flex items-center justify-between group transition-colors ${
                   isVitalsCompleted ? 'bg-slate-50/50' : 'active:bg-blue-50'
                 }`}
               >
-                <div className="flex items-center gap-4">
-                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all ${
+                <div className="flex items-center gap-3">
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
                     isVitalsCompleted
                       ? 'bg-slate-200 text-slate-500 shadow-none'
                       : 'bg-white text-blue-600 shadow-sm border border-blue-100'
                   }`}>
-                    {isVitalsCompleted ? <CheckCircle2 className="w-5 h-5" /> : <Activity className="w-5 h-5" />}
+                    {isVitalsCompleted ? <CheckCircle2 className="w-4 h-4" /> : <Activity className="w-4 h-4" />}
                   </div>
                   <div className="text-left">
-                    <h3 className={`text-sm font-black uppercase tracking-wider ${isVitalsCompleted ? 'text-slate-400' : 'text-slate-900'}`}>今日健康指标</h3>
-                    <p className={`text-[10px] font-bold uppercase tracking-widest ${isVitalsCompleted ? 'text-slate-400' : 'text-slate-400'}`}>
+                    <h3 className={`text-[13px] font-black uppercase tracking-wider ${isVitalsCompleted ? 'text-slate-400' : 'text-slate-900'}`}>今日健康指标</h3>
+                    <p className={`text-[9px] font-bold uppercase tracking-widest ${isVitalsCompleted ? 'text-slate-400' : 'text-slate-400'}`}>
                       {isVitalsCompleted ? '数据已就绪，请同步' : '请录入今日身体指标'}
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
                   {isVitalsCompleted && (
-                    <span className="text-[10px] font-black text-slate-400 bg-slate-100 px-2 py-1 rounded-lg uppercase tracking-widest border border-slate-200">已完成</span>
+                    <span className="text-[9px] font-black text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-md uppercase tracking-widest border border-slate-200">已完成</span>
                   )}
-                  {collapsedSections.vitals ? <ChevronDown className="w-5 h-5 text-slate-300" /> : <ChevronUp className="w-5 h-5 text-slate-300" />}
+                  {collapsedSections.vitals ? <ChevronDown className="w-4 h-4 text-slate-300" /> : <ChevronUp className="w-4 h-4 text-slate-300" />}
                 </div>
               </button>
 
               {!collapsedSections.vitals && (
-                <div className="px-6 pb-6 space-y-4 animate-in slide-in-from-top-2 duration-300">
-                  <div className="grid grid-cols-2 gap-3">
+                <div className="px-5 pb-5 space-y-3 animate-in slide-in-from-top-2 duration-300">
+                  <div className="grid grid-cols-2 gap-2">
                     {[
                       { label: '体重', key: 'weight', unit: 'KG', icon: TrendingUp, color: 'text-blue-500' },
                       { label: '体脂率', key: 'bodyFat', unit: '%', icon: Activity, color: 'text-orange-500' },
                       { label: '肌肉量', key: 'muscleMass', unit: 'KG', icon: Zap, color: 'text-emerald-500' },
                       { label: '内脏脂肪', key: 'visceralFat', unit: '级', icon: ShieldCheck, color: 'text-purple-500' }
                     ].map((item) => (
-                      <div key={item.key} className={`p-4 rounded-[24px] border transition-all ${
+                      <div key={item.key} className={`p-3 rounded-2xl border transition-all ${
                         isSyncedToday 
                           ? 'bg-slate-50/30 border-slate-100' 
                           : 'bg-slate-50/50 border-slate-100 focus-within:border-emerald-200 focus-within:bg-white'
                       }`}>
-                        <div className="flex items-center gap-2 mb-2">
-                          <item.icon className={`w-3.5 h-3.5 ${isSyncedToday ? 'text-slate-300' : item.color}`} />
-                          <span className={`text-[10px] font-black uppercase tracking-widest ${isSyncedToday ? 'text-slate-300' : 'text-slate-400'}`}>{item.label}</span>
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <item.icon className={`w-3 h-3 ${isSyncedToday ? 'text-slate-300' : item.color}`} />
+                          <span className={`text-[9px] font-black uppercase tracking-widest ${isSyncedToday ? 'text-slate-300' : 'text-slate-400'}`}>{item.label}</span>
                         </div>
                         <div className="flex items-baseline gap-1">
                           <input 
@@ -1129,11 +1235,11 @@ export default function TrackClient({ slug }: { slug: string }) {
                             onChange={(e) => !isSyncedToday && setDailyVitals(p => ({...p, [item.key]: e.target.value}))}
                             placeholder="0.0"
                             disabled={isSyncedToday}
-                            className={`w-full bg-transparent text-lg font-black focus:outline-none p-0 ${
+                            className={`w-full bg-transparent text-base font-black focus:outline-none p-0 ${
                               isSyncedToday ? 'text-slate-400 cursor-not-allowed' : 'text-slate-900'
                             }`}
                           />
-                          <span className={`text-[10px] font-black uppercase ${isSyncedToday ? 'text-slate-300' : 'text-slate-400'}`}>{item.unit}</span>
+                          <span className={`text-[9px] font-black uppercase ${isSyncedToday ? 'text-slate-300' : 'text-slate-400'}`}>{item.unit}</span>
                         </div>
                       </div>
                     ))}
@@ -1143,48 +1249,48 @@ export default function TrackClient({ slug }: { slug: string }) {
             </div>
 
             {/* 3. 今日体感反馈 (Feedback) */}
-            <div className={`bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden transition-all duration-500 ${
+            <div className={`bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden transition-all duration-500 ${
               isFeedbackCompleted ? 'opacity-90' : ''
             }`}>
               <button 
                 onClick={() => setCollapsedSections(prev => ({ ...prev, feedback: !prev.feedback }))}
-                className={`w-full px-6 py-5 flex items-center justify-between group transition-colors ${
+                className={`w-full px-5 py-3 flex items-center justify-between group transition-colors ${
                   isFeedbackCompleted ? 'bg-slate-50/50' : 'active:bg-purple-50'
                 }`}
               >
-                <div className="flex items-center gap-4">
-                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all ${
+                <div className="flex items-center gap-3">
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
                     isFeedbackCompleted
                       ? 'bg-slate-200 text-slate-500 shadow-none'
                       : 'bg-white text-purple-600 shadow-sm border border-purple-100'
                   }`}>
-                    {isFeedbackCompleted ? <CheckCircle2 className="w-5 h-5" /> : <MessageSquare className="w-5 h-5" />}
+                    {isFeedbackCompleted ? <CheckCircle2 className="w-4 h-4" /> : <MessageSquare className="w-4 h-4" />}
                   </div>
                   <div className="text-left">
-                    <h3 className={`text-sm font-black uppercase tracking-wider ${isFeedbackCompleted ? 'text-slate-400' : 'text-slate-900'}`}>今日体感反馈</h3>
-                    <p className={`text-[10px] font-bold uppercase tracking-widest ${isFeedbackCompleted ? 'text-slate-400' : 'text-slate-400'}`}>
+                    <h3 className={`text-[13px] font-black uppercase tracking-wider ${isFeedbackCompleted ? 'text-slate-400' : 'text-slate-900'}`}>今日体感反馈</h3>
+                    <p className={`text-[9px] font-bold uppercase tracking-widest ${isFeedbackCompleted ? 'text-slate-400' : 'text-slate-400'}`}>
                       {isFeedbackCompleted ? '反馈已就绪，请同步' : '记录您的身体状态'}
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
                   {isFeedbackCompleted && (
-                    <span className="text-[10px] font-black text-slate-400 bg-slate-100 px-2 py-1 rounded-lg uppercase tracking-widest border border-slate-200">已完成</span>
+                    <span className="text-[9px] font-black text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-md uppercase tracking-widest border border-slate-200">已完成</span>
                   )}
-                  {collapsedSections.feedback ? <ChevronDown className="w-5 h-5 text-slate-300" /> : <ChevronUp className="w-5 h-5 text-slate-300" />}
+                  {collapsedSections.feedback ? <ChevronDown className="w-4 h-4 text-slate-300" /> : <ChevronUp className="w-4 h-4 text-slate-300" />}
                 </div>
               </button>
 
               {!collapsedSections.feedback && (
-                <div className="px-6 pb-6 space-y-8 animate-in slide-in-from-top-2 duration-300">
-                  <div className="space-y-6">
+                <div className="px-5 pb-5 space-y-6 animate-in slide-in-from-top-2 duration-300">
+                  <div className="space-y-4">
                     {[
                       { label: '今日心情', key: 'mood', minLabel: '不好', maxLabel: '非常好' },
                       { label: '精力状态', key: 'energy', minLabel: '不好', maxLabel: '非常好' },
                       { label: '睡眠质量', key: 'sleep', minLabel: '不好', maxLabel: '非常好' },
                       { label: '肠道情况', key: 'bowel', minLabel: '排便困难', maxLabel: '非常顺畅' }
                     ].map((item) => (
-                      <div key={item.key} className="space-y-3">
+                      <div key={item.key} className="space-y-2">
                         <div className="flex justify-between items-end mb-1">
                           <label className={`text-[10px] font-black uppercase tracking-widest ml-1 ${isSyncedToday ? 'text-slate-300' : 'text-slate-400'}`}>{item.label}</label>
                           <span className={`text-sm font-black transition-colors ${isSyncedToday ? 'text-slate-300' : getScoreColor((dailyFeedback as any)[item.key], 'text')}`}>
@@ -1237,11 +1343,11 @@ export default function TrackClient({ slug }: { slug: string }) {
             </div>
 
             {/* 4. 全局上传按钮 (仅在所有板块完成后显示) */}
-            <div className="pt-4 pb-12">
+            <div className="pt-2 pb-10 flex flex-col items-center">
               <button 
                 onClick={handleSync}
                 disabled={!(isPlanCompleted && isVitalsCompleted && isFeedbackCompleted) || isSyncing || isSyncedToday}
-                className={`w-full py-5 rounded-[24px] text-[13px] font-black uppercase tracking-[0.3em] shadow-2xl active:scale-[0.98] transition-all flex items-center justify-center gap-3 ${
+                className={`w-2/3 max-w-[280px] py-3.5 rounded-[20px] text-[12px] font-black uppercase tracking-[0.25em] shadow-xl active:scale-[0.98] transition-all flex items-center justify-center gap-2.5 ${
                   isSyncedToday 
                     ? 'bg-slate-100 text-slate-400 shadow-none cursor-not-allowed' 
                     : (isPlanCompleted && isVitalsCompleted && isFeedbackCompleted)
@@ -1250,16 +1356,16 @@ export default function TrackClient({ slug }: { slug: string }) {
                 }`}
               >
                 {isSyncing ? (
-                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                 ) : isSyncedToday ? (
-                  <CheckCircle2 className="w-5 h-5" />
+                  <CheckCircle2 className="w-4 h-4" />
                 ) : (
-                  <Upload className={`w-5 h-5 ${(isPlanCompleted && isVitalsCompleted && isFeedbackCompleted) ? 'animate-bounce' : ''}`} />
+                  <Upload className={`w-4 h-4 ${(isPlanCompleted && isVitalsCompleted && isFeedbackCompleted) ? 'animate-bounce' : ''}`} />
                 )}
-                {isSyncing ? '正在同步数据...' : isSyncedToday ? '今日数据已全部同步' : '同步今日数据至营养师'}
+                {isSyncing ? '正在同步数据...' : isSyncedToday ? '今日数据已同步' : '同步今日数据'}
               </button>
               {!(isPlanCompleted && isVitalsCompleted && isFeedbackCompleted) && !isSyncedToday && (
-                <p className="text-center text-[10px] font-black text-slate-300 uppercase tracking-widest mt-4">
+                <p className="text-center text-[9px] font-black text-slate-300 uppercase tracking-widest mt-3">
                   请完成上方所有打卡项后点击同步
                 </p>
               )}
@@ -1392,47 +1498,53 @@ export default function TrackClient({ slug }: { slug: string }) {
                 <LogOut className="w-4 h-4" />
                 退出当前账号
               </button>
+              <p className="text-[8px] font-black text-slate-200 uppercase tracking-[0.2em] text-center pt-4">
+                PWA Build: 1.2.0-UPDATE-0306
+              </p>
             </div>
           </div>
         )}
       </main>
 
       {/* 底部导航栏 (统一为 Web 端风格) */}
-      <nav className="fixed bottom-0 left-0 right-0 px-6 pb-8 pt-4 bg-white/80 backdrop-blur-xl border-t border-slate-100 z-50 shadow-[0_-8px_30px_rgba(0,0,0,0.04)]">
-        <div className="max-w-md mx-auto flex flex-col items-center gap-4">
-          <div className="w-full flex justify-around items-center relative">
-            {[
-              { id: 'today', icon: Zap, label: '今日' },
-              { id: 'trends', icon: TrendingUp, label: '趋势' },
-              { id: 'messages', icon: MessageSquare, label: '咨询', badge: unreadCount },
-              { id: 'me', icon: Activity, label: '我的' }
-            ].map((item) => (
-              <button 
-                key={item.id} 
-                onClick={() => setActiveTab(item.id as any)} 
-                className={`flex flex-col items-center gap-1.5 transition-all duration-300 relative group ${
-                  activeTab === item.id 
-                  ? 'text-emerald-600' 
-                  : 'text-slate-400 hover:text-slate-600'
-                }`}
-              >
-                <div className={`p-2 rounded-xl transition-all duration-300 ${activeTab === item.id ? 'bg-emerald-50 shadow-sm shadow-emerald-100/50 scale-110' : 'group-active:scale-90'}`}>
-                  <item.icon className={`w-5 h-5 ${activeTab === item.id ? 'stroke-[2.5px]' : 'stroke-[2px]'}`} />
-                </div>
-                <span className={`text-[10px] font-black tracking-tight transition-colors ${activeTab === item.id ? 'text-emerald-700' : 'text-slate-400'}`}>
-                  {item.label}
+      <nav className="fixed bottom-0 left-0 right-0 px-6 pb-6 pt-3 bg-white/95 backdrop-blur-2xl border-t border-slate-100 z-50 shadow-[0_-15px_40px_rgba(0,0,0,0.05)] rounded-t-[32px]">
+        <div className="max-w-md mx-auto flex justify-around items-center relative">
+          {[
+            { id: 'today', icon: LayoutDashboard, label: '今日' },
+            { id: 'trends', icon: Activity, label: '趋势' },
+            { id: 'messages', icon: MessageCircle, label: '咨询', badge: unreadCount },
+            { id: 'me', icon: User, label: '我的' }
+          ].map((item) => (
+            <button 
+              key={item.id} 
+              onClick={() => setActiveTab(item.id as any)} 
+              className={`flex flex-col items-center gap-1 transition-all duration-300 relative group ${
+                activeTab === item.id 
+                ? 'text-emerald-600' 
+                : 'text-slate-400'
+              }`}
+            >
+              <div className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all duration-300 ${
+                activeTab === item.id 
+                ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-100 scale-105 -translate-y-1' 
+                : 'bg-transparent active:scale-90'
+              }`}>
+                <item.icon className={`w-5 h-5 ${activeTab === item.id ? 'stroke-[2.5px]' : 'stroke-[2px]'}`} />
+              </div>
+              <span className={`text-[9px] font-black tracking-widest uppercase transition-all duration-300 ${
+                activeTab === item.id 
+                ? 'text-emerald-700 opacity-100' 
+                : 'text-slate-400 opacity-60'
+              }`}>
+                {item.label}
+              </span>
+              {item.badge ? (
+                <span className="absolute top-0 right-0 w-4 h-4 bg-rose-500 text-white text-[8px] font-black rounded-full flex items-center justify-center border-2 border-white shadow-md animate-pulse">
+                  {item.badge}
                 </span>
-                {item.badge ? (
-                  <span className="absolute top-0 right-0 w-4 h-4 bg-rose-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center border-2 border-white shadow-sm">
-                    {item.badge}
-                  </span>
-                ) : null}
-              </button>
-            ))}
-          </div>
-          <div className="text-[8px] font-bold text-slate-300 uppercase tracking-widest opacity-50">
-            © 2026 HealthCare Tech · {APP_VERSION}
-          </div>
+              ) : null}
+            </button>
+          ))}
         </div>
       </nav>
 
@@ -1490,6 +1602,57 @@ export default function TrackClient({ slug }: { slug: string }) {
                 className="flex-[2] py-5 bg-slate-900 text-white rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] shadow-xl shadow-slate-200 active:scale-[0.98] disabled:opacity-30 disabled:grayscale transition-all"
               >
                 确认并同步
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 库存校准弹窗 */}
+      {isCalibrateModalOpen && calibratingProduct && (
+        <div className="fixed inset-0 z-[200000] flex items-center justify-center p-6 bg-slate-900/40 backdrop-blur-md transition-all duration-300">
+          <div className="bg-white w-full max-w-sm rounded-[40px] p-10 shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-200">
+            <div className="flex flex-col items-center gap-2 mb-10 text-center">
+              <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-3xl flex items-center justify-center mb-2 shadow-lg shadow-emerald-50">
+                <ClipboardList className="w-8 h-8" />
+              </div>
+              <h3 className="text-xl font-black text-slate-900">校准库存</h3>
+              <p className="text-sm text-slate-400 font-medium tracking-tight">产品: {calibratingProduct.name}</p>
+            </div>
+
+            <div className="space-y-8">
+              <div className="space-y-3">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2">当前剩余实物数量</label>
+                <div className="relative group">
+                  <input 
+                    type="number" 
+                    value={calibrationStock}
+                    onChange={(e) => setCalibrationStock(e.target.value)}
+                    placeholder="0"
+                    className="w-full bg-slate-50/50 border border-slate-50 rounded-[24px] p-6 text-3xl font-black text-slate-900 focus:ring-4 focus:ring-emerald-500/5 focus:bg-white focus:border-emerald-200 outline-none transition-all placeholder:text-slate-200 text-center tabular-nums"
+                  />
+                </div>
+                <p className="text-[10px] text-slate-400 text-center font-medium">请按实物包装上的剩余量进行录入</p>
+              </div>
+            </div>
+
+            <div className="mt-12 flex gap-3">
+              <button 
+                onClick={() => {
+                  setIsCalibrateModalOpen(false);
+                  setCalibratingProduct(null);
+                  setCalibrationStock('');
+                }}
+                className="flex-1 py-5 bg-slate-50 text-slate-400 rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] hover:bg-slate-100 transition-all active:scale-[0.98]"
+              >
+                取消
+              </button>
+              <button 
+                onClick={handleCalibrateInventory}
+                disabled={!calibrationStock}
+                className="flex-[2] py-5 bg-emerald-600 text-white rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] shadow-xl shadow-emerald-200 active:scale-[0.98] disabled:opacity-30 disabled:grayscale transition-all"
+              >
+                确认校准
               </button>
             </div>
           </div>

@@ -58,6 +58,7 @@ import { useData } from '../../../context/DataContext';
 
 import { Sidebar } from '../../../components/Sidebar';
 import { ActiveTab } from '../../../types';
+import { TrendChart } from '../../../components/TrendChart';
 
 // --- Sortable Components for Protocol Editor ---
 
@@ -70,9 +71,12 @@ interface SortablePhaseProps {
   onRemoveAction?: (actionId: string) => void;
   onUpdateAction?: (actionId: string, updates: Partial<ProtocolAction>) => void;
   isOverlay?: boolean;
+  isCompleted?: boolean;
+  isCurrent?: boolean;
+  onSetCurrent?: () => void;
 }
 
-const SortablePhase = ({ phase, index, onRemove, onUpdate, onAddAction, onRemoveAction, onUpdateAction, isOverlay }: SortablePhaseProps) => {
+const SortablePhase = ({ phase, index, onRemove, onUpdate, onAddAction, onRemoveAction, onUpdateAction, isOverlay, isCompleted, isCurrent, onSetCurrent }: SortablePhaseProps) => {
   const { products, ingredients } = useData();
   const {
     attributes,
@@ -122,16 +126,40 @@ const SortablePhase = ({ phase, index, onRemove, onUpdate, onAddAction, onRemove
   return (
     <div ref={setNodeRef} style={style} className={`relative pl-24 group ${isOverlay ? 'z-50' : ''}`}>
       {/* 阶段指示器 */}
-      <div className="absolute left-0 top-0 flex flex-col items-center">
+      <div className="absolute left-0 top-0 flex flex-col items-center gap-4">
         <div 
           {...attributes} 
           {...listeners}
-          className="w-20 h-20 bg-white border-4 border-slate-50 rounded-[28px] shadow-xl flex flex-col items-center justify-center group-hover:border-emerald-500 transition-all duration-500 cursor-grab active:cursor-grabbing"
+          className={`w-20 h-20 border-4 rounded-[28px] shadow-xl flex flex-col items-center justify-center transition-all duration-500 cursor-grab active:cursor-grabbing ${
+            isCompleted ? 'bg-emerald-600 border-emerald-500 text-white' : 
+            isCurrent ? 'bg-slate-900 border-slate-800 text-white scale-110' : 
+            'bg-white border-slate-50 text-slate-900 group-hover:border-emerald-500'
+          }`}
         >
-          <GripVertical className="w-4 h-4 text-slate-300 mb-1" />
-          <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Phase</span>
-          <span className="text-2xl font-black text-slate-900 leading-none">{index + 1}</span>
+          <GripVertical className={`w-4 h-4 mb-1 ${isCompleted || isCurrent ? 'text-white/40' : 'text-slate-300'}`} />
+          <span className={`text-[10px] font-black uppercase tracking-tighter ${isCompleted || isCurrent ? 'text-white/60' : 'text-slate-400'}`}>Phase</span>
+          <span className="text-2xl font-black leading-none">{index + 1}</span>
         </div>
+        
+        {/* 状态切换按钮 */}
+        {!isCompleted && !isCurrent && (
+          <button 
+            onClick={onSetCurrent}
+            className="px-3 py-1 bg-slate-50 text-slate-400 text-[8px] font-black uppercase tracking-widest rounded-lg border border-slate-100 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-100 transition-all"
+          >
+            设为当前
+          </button>
+        )}
+        {isCurrent && (
+          <div className="px-3 py-1 bg-emerald-100 text-emerald-600 text-[8px] font-black uppercase tracking-widest rounded-lg border border-emerald-200 animate-pulse">
+            进行中
+          </div>
+        )}
+        {isCompleted && (
+          <div className="px-3 py-1 bg-slate-100 text-slate-400 text-[8px] font-black uppercase tracking-widest rounded-lg border border-slate-200">
+            已完成
+          </div>
+        )}
       </div>
 
       <div className="flex items-center justify-between mb-6">
@@ -383,7 +411,9 @@ export default function PlanClient() {
     checkConflicts,
     feedbacks,
     addFeedback,
-    updateFeedback
+    updateFeedback,
+    calculateWROMScore,
+    weightLogs
   } = useData();
   const router = useRouter();
   
@@ -406,7 +436,7 @@ export default function PlanClient() {
   const [searchQuery, setSearchQuery] = useState('');
   const [editingValues, setEditingValues] = useState<Record<string, any>>({});
   const selectedClientId = id as string;
-  const [clientDetailTab, setClientDetailTab] = useState<'status' | 'plan' | 'inventory' | 'notes' | 'evidence' | 'assets' | 'orders' | 'messages'>('plan');
+  const [clientDetailTab, setClientDetailTab] = useState<'status' | 'health' | 'plan' | 'inventory' | 'notes' | 'evidence' | 'assets' | 'orders' | 'messages'>('plan');
 
   // Protocol Editor State
   const [protocol, setProtocol] = useState(initialProtocol);
@@ -866,6 +896,7 @@ export default function PlanClient() {
                 <div className="flex gap-1 bg-white p-1.5 rounded-3xl border border-slate-100 shadow-sm w-fit">
                   {[
                     { id: 'status', label: '动态面板', icon: Activity },
+                    { id: 'health', label: '健康曲线', icon: TrendingUp },
                     { id: 'plan', label: '干预配方', icon: FlaskConical },
                     { id: 'inventory', label: '库存追踪', icon: Package },
                     { id: 'notes', label: '跟进日志', icon: StickyNote },
@@ -1011,36 +1042,45 @@ export default function PlanClient() {
                         <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 blur-[60px] rounded-full -translate-y-1/2 translate-x-1/2"></div>
                         
                         <div className="relative z-10">
-                          <div className="flex items-center justify-between mb-6">
-                            <h3 className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em] flex items-center gap-2">
-                              <Target className="w-4 h-4 text-emerald-400" />
-                              WROM 复购预测
-                            </h3>
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-2xl font-black text-emerald-400">88</span>
-                              <span className="text-[9px] font-black text-white/40 uppercase">Point</span>
-                            </div>
-                          </div>
+                          {(() => {
+                            const wrom = calculateWROMScore(selectedClient.id);
+                            return (
+                              <>
+                                <div className="flex items-center justify-between mb-6">
+                                  <h3 className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em] flex items-center gap-2">
+                                    <Target className="w-4 h-4 text-emerald-400" />
+                                    WROM 复购预测
+                                  </h3>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-2xl font-black text-emerald-400">{wrom.total}</span>
+                                    <span className="text-[9px] font-black text-white/40 uppercase">Point</span>
+                                  </div>
+                                </div>
 
-                          {/* 维度微缩进度条 */}
-                          <div className="space-y-4 mb-6">
-                            {[
-                              { label: '依从性 (40%)', val: 92, color: 'bg-emerald-500' },
-                              { label: '活跃度 (30%)', val: 75, color: 'bg-blue-400' },
-                              { label: '体感反馈 (20%)', val: 85, color: 'bg-amber-400' },
-                              { label: '库存余量 (10%)', val: 15, color: 'bg-rose-400' },
-                            ].map((dim, i) => (
-                              <div key={i}>
-                                <div className="flex justify-between text-[8px] font-black uppercase tracking-widest text-white/30 mb-1">
-                                  <span>{dim.label}</span>
-                                  <span>{dim.val}%</span>
+                                {/* 维度微缩进度条 */}
+                                <div className="space-y-4 mb-6">
+                                  {[
+                                    { label: '依从性 (40%)', val: Math.round((wrom.breakdown.compliance / 40) * 100), color: 'bg-emerald-500' },
+                                    { label: '活跃度 (10%)', val: Math.round((wrom.breakdown.interaction / 10) * 100), color: 'bg-blue-400' },
+                                    { label: '体感反馈 (20%)', val: Math.round((wrom.breakdown.feeling / 20) * 100), color: 'bg-amber-400' },
+                                    { label: '库存余量 (30%)', val: Math.round((wrom.breakdown.inventory / 30) * 100), color: 'bg-rose-400' },
+                                  ].map((dim, i) => (
+                                    <div key={i}>
+                                      <div className="flex justify-between text-[8px] font-black uppercase tracking-widest text-white/30 mb-1">
+                                        <span>{dim.label}</span>
+                                        <span>{dim.val}%</span>
+                                      </div>
+                                      <div className="h-1 bg-white/5 rounded-full overflow-hidden">
+                                        <div className={`h-full ${dim.color} transition-all duration-1000`} style={{ width: `${dim.val}%` }}></div>
+                                      </div>
+                                    </div>
+                                  ))}
                                 </div>
-                                <div className="h-1 bg-white/5 rounded-full overflow-hidden">
-                                  <div className={`h-full ${dim.color} transition-all duration-1000`} style={{ width: `${dim.val}%` }}></div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
+                              </>
+                            );
+                          })()}
+
+                          {/* 资深营养师一句话行动建议 */}
 
                           {/* 资深营养师一句话行动建议 */}
                           <div className="p-3 bg-white/5 rounded-2xl border border-white/10 hover:bg-white/10 transition-all cursor-pointer">
@@ -1129,6 +1169,110 @@ export default function PlanClient() {
                   </div>
                 )}
 
+                {clientDetailTab === 'health' && (
+                  <div className="space-y-8 animate-in fade-in zoom-in-95 duration-500">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <TrendChart 
+                        title="体重趋势 (Weight)" 
+                        data={weightLogs
+                          .filter(log => log.client_id === selectedClientId)
+                          .sort((a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime())
+                          .map(log => ({
+                            label: new Date(log.recorded_at).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' }),
+                            value: log.weight_kg
+                          }))
+                        }
+                        color="#10b981"
+                        unit="kg"
+                      />
+                      <TrendChart 
+                        title="综合体感评分 (Feeling)" 
+                        data={feedbacks
+                          .filter(f => f.client_id === selectedClientId && f.sender_type === 'client' && (f.energy_level || f.sleep_quality))
+                          .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+                          .map(f => ({
+                            label: new Date(f.created_at).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' }),
+                            value: ((f.energy_level || 0) + (f.sleep_quality || 0)) / 2 * 2 // 转换为 10 分制
+                          }))
+                        }
+                        color="#8b5cf6"
+                        unit="分"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div className="bg-white rounded-[32px] p-6 border border-slate-100 shadow-sm">
+                        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
+                          <Activity className="w-4 h-4 text-blue-500" />
+                          日均饮水量 (Hydration)
+                        </h4>
+                        <div className="flex items-end gap-3 mb-6">
+                          <span className="text-4xl font-black text-slate-900">
+                            {(() => {
+                              const clientDailyReports = (window as any).__MOCK_DATA__?.clientDailyReports || [];
+                              const reports = clientDailyReports.filter((r: any) => r.client_id === selectedClientId && r.water_intake_ml);
+                              if (reports.length === 0) return 0;
+                              const total = reports.reduce((acc: number, r: any) => acc + (r.water_intake_ml || 0), 0);
+                              return Math.round(total / reports.length);
+                            })()}
+                          </span>
+                          <span className="text-sm font-black text-slate-400 uppercase mb-1">ml / Day</span>
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex justify-between text-[8px] font-black uppercase text-slate-400">
+                            <span>达成率</span>
+                            <span>75%</span>
+                          </div>
+                          <div className="h-2 bg-slate-50 rounded-full overflow-hidden">
+                            <div className="h-full bg-blue-500 w-[75%]"></div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="bg-white rounded-[32px] p-6 border border-slate-100 shadow-sm md:col-span-2">
+                        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
+                          <Zap className="w-4 h-4 text-amber-500" />
+                          方案执行阶段进度 (Protocol Phase)
+                        </h4>
+                        <div className="relative pt-4">
+                          <div className="absolute top-1/2 left-0 w-full h-1 bg-slate-100 -translate-y-1/2 rounded-full"></div>
+                          <div className="relative flex justify-between">
+                            {protocol.phases.map((p, idx) => {
+                              const isCompleted = (selectedClient?.current_phase_index || 0) > idx;
+                              const isCurrent = (selectedClient?.current_phase_index || 0) === idx;
+                              
+                              return (
+                                <div key={p.id} className="flex flex-col items-center gap-3 relative z-10">
+                                  <div 
+                                    onClick={() => handleUpdateClient({ current_phase_index: idx })}
+                                    className={`w-10 h-10 rounded-2xl flex items-center justify-center border-4 border-white shadow-xl cursor-pointer transition-all duration-500 ${
+                                      isCompleted ? 'bg-emerald-500 text-white' : 
+                                      isCurrent ? 'bg-slate-900 text-white scale-110' : 
+                                      'bg-slate-100 text-slate-400'
+                                    }`}
+                                  >
+                                    {isCompleted ? <CheckCircle2 className="w-5 h-5" /> : <span className="text-xs font-black">{idx + 1}</span>}
+                                  </div>
+                                  <div className="text-center">
+                                    <div className={`text-[9px] font-black uppercase tracking-tighter ${isCurrent ? 'text-slate-900' : 'text-slate-400'}`}>
+                                      {p.name}
+                                    </div>
+                                    {isCurrent && (
+                                      <div className="px-2 py-0.5 bg-emerald-100 text-emerald-600 text-[8px] font-black rounded-full mt-1 animate-pulse">
+                                        进行中
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {clientDetailTab === 'plan' && (
                   <div className="space-y-10 animate-in fade-in zoom-in-95 duration-500">
                     {/* 配方编辑器头部 */}
@@ -1197,18 +1341,26 @@ export default function PlanClient() {
                             items={protocol.phases.map(p => p.id)}
                             strategy={verticalListSortingStrategy}
                           >
-                            {protocol.phases.map((phase, idx) => (
-                              <SortablePhase 
-                                key={phase.id} 
-                                phase={phase} 
-                                index={idx}
-                                onRemove={() => removePhase(phase.id)}
-                                onUpdate={(updates) => updatePhase(phase.id, updates)}
-                                onAddAction={() => addAction(phase.id)}
-                                onRemoveAction={(actionId) => removeAction(phase.id, actionId)}
-                                onUpdateAction={(actionId, updates) => updateAction(phase.id, actionId, updates)}
-                              />
-                            ))}
+                            {protocol.phases.map((phase, idx) => {
+                              const isCompleted = (selectedClient?.current_phase_index || 0) > idx;
+                              const isCurrent = (selectedClient?.current_phase_index || 0) === idx;
+                              
+                              return (
+                                <SortablePhase 
+                                  key={phase.id} 
+                                  phase={phase} 
+                                  index={idx}
+                                  onRemove={() => removePhase(phase.id)}
+                                  onUpdate={(updates) => updatePhase(phase.id, updates)}
+                                  onAddAction={() => addAction(phase.id)}
+                                  onRemoveAction={(actionId) => removeAction(phase.id, actionId)}
+                                  onUpdateAction={(actionId, updates) => updateAction(phase.id, actionId, updates)}
+                                  isCompleted={isCompleted}
+                                  isCurrent={isCurrent}
+                                  onSetCurrent={() => handleUpdateClient({ current_phase_index: idx })}
+                                />
+                              );
+                            })}
                           </SortableContext>
 
                           {/* 添加阶段按钮 */}

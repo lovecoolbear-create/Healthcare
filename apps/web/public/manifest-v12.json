@@ -1,11 +1,11 @@
 {
-  "name": "HealthCare 营养管理系统",
-  "short_name": "HealthCare",
-  "description": "您的专属营养管理专家",
-  "start_url": "/track",
+  "name": "HealthCare Pro V12",
+  "short_name": "HC Pro v1.2",
+  "description": "数字化调理系统 · 客户专属入口 (V5-FINAL-BYPASS)",
+  "start_url": "/track?v=FINAL_V5",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#10b981",
+  "theme_color": "#059669",
   "icons": [
     {
       "src": "https://cdn-icons-png.flaticon.com/512/3063/3063822.png",

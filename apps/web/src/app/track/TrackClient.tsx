@@ -6,7 +6,8 @@ import {
   ChevronRight, CheckCircle2, AlertCircle, ArrowLeft, Send, Plus, Minus,
   Weight, Calendar, CheckSquare, History, LogOut, Moon, Utensils, X,
   Check, Activity, Award, MessageSquare, TrendingDown, LayoutDashboard, Phone,
-  Settings2, Pill, CloudSun, ChevronDown, ChevronUp, Camera, Upload, Loader2, Link2
+  Settings2, Pill, CloudSun, ChevronDown, ChevronUp, Camera, Upload, Loader2, Link2,
+  Droplets, Scale, MessageSquare as MessageSquareIcon, ClipboardList as ClipboardListIcon
 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { mockClients, mockProducts, mockProtocol } from '../../../../mp/src/mocks/data';
@@ -15,7 +16,7 @@ import { useData } from '../../context/DataContext';
 import { cloud } from '../../services/cloud';
 
 export default function TrackClient() {
-  const { clients, updateClient, setClients, addHealthMetric, addCheckinLog } = useData();
+  const { clients, updateClient, setClients, addHealthMetric, addCheckinLog, updateFeedback } = useData();
   const searchParams = useSearchParams();
   const slugFromUrl = searchParams.get('s');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -29,7 +30,29 @@ export default function TrackClient() {
   const [loginPhone, setLoginPhone] = useState('');
   const [loginError, setLoginError] = useState('');
   const [isLoginLoading, setIsLoginLoading] = useState(false);
-  const APP_VERSION = 'v1.0.5';
+  const APP_VERSION = 'v1.2.0-FINAL-V5';
+  
+  // 强制版本校验逻辑：如果当前版本与代码中的版本不符，强制刷新一次
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const storedVersion = localStorage.getItem('hc_app_version');
+      if (storedVersion !== APP_VERSION) {
+        console.log('Version mismatch, forcing reload...', storedVersion, '->', APP_VERSION);
+        localStorage.setItem('hc_app_version', APP_VERSION);
+        
+        // 如果不是第一次运行（即 storedVersion 有值且不符），强制刷新
+        if (storedVersion) {
+          // 清理所有缓存并刷新
+          if ('caches' in window) {
+            caches.keys().then(names => {
+              for (let name of names) caches.delete(name);
+            });
+          }
+          window.location.reload();
+        }
+      }
+    }
+  }, []);
   
   // 业务状态
   const [activeTab, setActiveTab] = useState<'today' | 'trends' | 'messages' | 'me'>('today');
@@ -38,6 +61,23 @@ export default function TrackClient() {
   const [achievementToShow, setAchievementToShow] = useState<{ type: 'streak' | 'milestone', value: number } | null>(null);
   
   const [clientId, setClientId] = useState<string | null>(null);
+
+  const checkinRules = useMemo(() => {
+    // 默认积分规则
+    return [
+      { id: 'streak-3', category: 'points', condition: { type: 'adherence_streak', value: 3 }, reward: { type: 'points', value: 1 } },
+      { id: 'streak-7', category: 'points', condition: { type: 'adherence_streak', value: 7 }, reward: { type: 'points', value: 2 } }
+    ];
+  }, []);
+
+  const getPointsForDay = (day: number) => {
+    // 每天 1 分，第 3 天额外 +1，第 7 天额外 +2
+    let points = 1;
+    if (day === 3) points += 1;
+    if (day === 7) points += 2;
+    
+    return day === 1 ? `${points}pt` : `+${points}pt`;
+  };
   
   // 头像上传逻辑
   const handleAvatarClick = () => {
@@ -465,6 +505,17 @@ export default function TrackClient() {
     );
   }, [feedbacks, client]);
 
+  // [v5.0] 已读回执逻辑：进入消息页时，静默将所有营养师消息标为已读
+  useEffect(() => {
+    if (activeTab === 'messages' && clientFeedbacks.length > 0) {
+      clientFeedbacks.forEach((f: any) => {
+        if (f.sender_type === 'practitioner' && !f.is_read) {
+          updateFeedback(f.id, { is_read: true });
+        }
+      });
+    }
+  }, [activeTab, clientFeedbacks, updateFeedback]);
+
   const unreadCount = useMemo(() => 
     clientFeedbacks.filter(f => f.sender_type === 'practitioner' && !f.is_read).length,
   [clientFeedbacks]);
@@ -651,7 +702,7 @@ export default function TrackClient() {
   const clientFromSlug = clients.find(c => c.slug === slugFromUrl);
 
   return (
-    <div className="min-h-screen bg-white font-sans text-slate-900 pb-32 touch-manipulation selection:bg-emerald-100">
+    <div className="min-h-screen bg-white font-sans text-slate-900 pb-32 touch-manipulation selection:bg-emerald-100 overflow-x-hidden relative">
       {/* 增强背景装饰 */}
       <div className="fixed top-0 left-0 right-0 h-[60vh] bg-gradient-to-b from-emerald-50/50 to-transparent -z-10 pointer-events-none" />
       <div className="fixed top-[-5%] right-[-5%] w-[60%] aspect-square bg-emerald-500/5 blur-[120px] rounded-full -z-10" />
@@ -670,7 +721,7 @@ export default function TrackClient() {
             </div>
           )}
 
-          <header className="px-6 pt-8 pb-4 sticky top-0 bg-white/95 backdrop-blur-3xl z-40 border-b border-slate-100 rounded-b-[32px] shadow-sm">
+          <header className="px-6 pt-4 pb-3 sticky top-0 bg-white/95 backdrop-blur-3xl z-40 border-b border-slate-100 rounded-b-[32px] shadow-sm">
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <div className="flex items-center gap-2">
@@ -702,7 +753,7 @@ export default function TrackClient() {
                 <button 
                   onClick={handleAvatarClick}
                   disabled={isUploading}
-                  className="w-11 h-11 bg-white rounded-xl shadow-md shadow-slate-200 border border-slate-100 flex items-center justify-center overflow-hidden relative active:scale-95 transition-all duration-500 group/avatar"
+                  className="w-10 h-10 bg-white rounded-xl shadow-md shadow-slate-200 border border-slate-100 flex items-center justify-center overflow-hidden relative active:scale-95 transition-all duration-500 group/avatar"
                 >
                   {isUploading ? (
                     <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center z-10">
@@ -723,11 +774,52 @@ export default function TrackClient() {
             </div>
           </header>
 
-          <main className="px-6 space-y-8 mt-4">
+          <main className="px-6 space-y-4 mt-3">
             {activeTab === 'today' && (
-              <section className="space-y-6">
+              <section className="space-y-4">
+                {/* 7天打卡面板 - 紧凑版 */}
+                <div className="bg-slate-900 rounded-[32px] p-4 text-white shadow-2xl shadow-emerald-900/20 relative overflow-hidden group">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 blur-[50px] rounded-full -mr-16 -mt-16" />
+                  <div className="relative z-10">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 bg-emerald-500 rounded-lg flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                          <Award className="w-4 h-4 text-white" />
+                        </div>
+                        <div>
+                          <h3 className="text-[11px] font-black uppercase tracking-widest text-emerald-400">7天连续打卡计划</h3>
+                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">本周积分：{client.loyalty_points || 0}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 bg-white/5 px-2 py-1 rounded-full border border-white/10">
+                        <span className="w-1 h-1 bg-emerald-500 rounded-full animate-pulse" />
+                        <span className="text-[9px] font-black uppercase tracking-widest text-slate-300">DAY {client.checkin_streak || 1}</span>
+                      </div>
+                    </div>
+                    
+                    <div className="flex justify-between items-center px-1">
+                      {[1, 2, 3, 4, 5, 6, 7].map((day) => {
+                        const isToday = day === (client.checkin_streak || 1);
+                        const isPast = day < (client.checkin_streak || 1);
+                        return (
+                          <div key={day} className="flex flex-col items-center gap-1.5">
+                            <div className={`w-8 h-10 rounded-xl flex flex-col items-center justify-center transition-all duration-500 ${
+                              isPast ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 
+                              isToday ? 'bg-white text-slate-900 scale-110 shadow-xl' : 
+                              'bg-white/5 text-slate-500 border border-white/5'
+                            }`}>
+                              <span className="text-[10px] font-black">{day}</span>
+                              {isPast ? <Check className="w-3 h-3 stroke-[4]" /> : <span className="text-[7px] font-black opacity-60 uppercase">{getPointsForDay(day)}</span>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
                 {/* 1. 精简核心指标与饮水 (2行显示) */}
-                <div className="bg-white/60 backdrop-blur-xl p-5 rounded-[32px] border border-slate-100 shadow-sm space-y-4">
+                <div className="bg-white/60 backdrop-blur-xl p-4 rounded-[32px] border border-slate-100 shadow-sm space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center shadow-sm">
@@ -1046,31 +1138,63 @@ export default function TrackClient() {
                 </div>
 
                 {/* 全局同步按钮 (浮动/底部) */}
-                <div className="pt-4 pb-8">
+                <div className="pt-2 pb-6 flex flex-col items-center">
                   <button 
                     onClick={handleSync}
                     disabled={isSyncing}
-                    className={`w-full py-4 rounded-[24px] flex items-center justify-center gap-3 transition-all duration-500 shadow-xl active:scale-[0.98] ${
+                    className={`w-2/3 max-w-[280px] py-2.5 rounded-[18px] flex items-center justify-center gap-2 transition-all duration-500 shadow-lg active:scale-[0.98] ${
                       isSyncedToday 
                         ? 'bg-emerald-500 text-white shadow-emerald-100' 
                         : 'bg-slate-900 text-white shadow-slate-300'
                     }`}
                   >
                     {isSyncing ? (
-                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
                     ) : (
-                      <Upload className="w-5 h-5" />
+                      <Upload className="w-3.5 h-3.5" />
                     )}
-                    <span className="text-sm font-black uppercase tracking-[0.2em]">
-                      {isSyncedToday ? '数据已同步给营养师' : (isSyncing ? '正在同步数据...' : '同步今日数据给营养师')}
+                    <span className="text-[11px] font-black uppercase tracking-widest">
+                      {isSyncedToday ? '数据已同步' : (isSyncing ? '正在同步...' : '同步今日数据')}
                     </span>
                   </button>
-                  <p className="text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-4">
+                  <p className="text-center text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-2">
                     LAST SYNC: {isSyncedToday ? 'JUST NOW' : 'NOT SYNCED YET'}
                   </p>
                 </div>
               </section>
             )}
+
+            {/* 底部导航栏 */}
+            <nav className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-3xl border-t border-slate-100 px-6 py-2.5 z-50 rounded-t-[32px] shadow-[0_-8px_40px_-12px_rgba(0,0,0,0.1)]">
+              <div className="flex justify-between items-center max-w-md mx-auto">
+                {[
+                  { id: 'today', icon: LayoutDashboard, label: '今日' },
+                  { id: 'trends', icon: TrendingDown, label: '趋势' },
+                  { id: 'messages', icon: MessageCircle, label: '消息', badge: unreadCount },
+                  { id: 'me', icon: User, label: '我的' }
+                ].map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => setActiveTab(item.id as any)}
+                    className={`flex flex-col items-center gap-1 transition-all relative ${
+                      activeTab === item.id ? 'text-emerald-600 scale-110' : 'text-slate-400 hover:text-slate-600'
+                    }`}
+                  >
+                    <div className={`w-9 h-9 rounded-2xl flex items-center justify-center transition-all ${
+                      activeTab === item.id ? 'bg-emerald-50 shadow-sm' : 'bg-transparent'
+                    }`}>
+                      <item.icon className={`w-5 h-5 ${activeTab === item.id ? 'stroke-[2.5]' : 'stroke-[2]'}`} />
+                    </div>
+                    <span className="text-[10px] font-black uppercase tracking-widest">{item.label}</span>
+                    {item.badge ? (
+                      <span className="absolute top-0 right-0 w-4 h-4 bg-rose-500 text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-white animate-bounce shadow-lg">
+                        {item.badge}
+                      </span>
+                    ) : null}
+                  </button>
+                ))}
+              </div>
+            </nav>
 
             {activeTab === 'trends' && (
               <section className="space-y-6">

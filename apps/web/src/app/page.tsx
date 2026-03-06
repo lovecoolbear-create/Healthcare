@@ -50,7 +50,8 @@ function DashboardContent() {
     protocols, addProtocol, updateProtocol, deleteProtocol, cleanEmptyProtocols,
     ingredients, addIngredient,
     importBatches, rollbackBatch,
-    userTasks, addUserTask, updateUserTask, addUserLog
+    userTasks, addUserTask, updateUserTask, addUserLog,
+    calculateWROMScore
   } = useData();
   
   const searchParams = useSearchParams();
@@ -1140,18 +1141,24 @@ function DashboardContent() {
                   <thead>
                     <tr className="bg-slate-50/50 text-slate-500 text-[10px] md:text-[11px] font-bold uppercase tracking-wider">
                       <th className="px-6 md:px-8 py-4">客户信息</th>
-                      <th className="px-6 md:px-8 py-4">依从性</th>
-                      <th className="px-6 md:px-8 py-4">库存水位</th>
-                      <th className="px-6 md:px-8 py-4 hidden sm:table-cell">积分</th>
+                      <th className="px-6 md:px-8 py-4">方案进度</th>
+                      <th className="px-6 md:px-8 py-4">复购指数 (WROM)</th>
+                      <th className="px-6 md:px-8 py-4 hidden sm:table-cell">依从性</th>
+                      <th className="px-6 md:px-8 py-4 hidden sm:table-cell">库存水位</th>
                       <th className="px-6 md:px-8 py-4 hidden md:table-cell">最后更新</th>
                       <th className="px-6 md:px-8 py-4 text-right">操作</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {filteredClients.map((client: Client) => {
-                      const minRemainingDays = client.inventory_status ? Math.min(...client.inventory_status.map(i => i.remaining_days)) : null;
+                      const wrom = calculateWROMScore(client.id);
                       const isHighlighted = allAlerts.some(alert => alert.id === client.id && alert.actionType === 'highlight_client');
                       const ghostingAlert = allAlerts.find(alert => alert.id === client.id && alert.alertType === 'ghosting');
+                      
+                      // 计算方案进度
+                      const protocol = protocols.find(p => p.id === client.protocol_id);
+                      const currentPhaseIndex = client.current_phase_index || 0;
+                      const totalPhases = protocol?.phases?.length || 0;
                       
                       return (
                         <tr 
@@ -1186,41 +1193,65 @@ function DashboardContent() {
                             </div>
                           </td>
                           <td className="px-6 md:px-8 py-4 md:py-5">
+                            <div className="flex flex-col gap-1">
+                              <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                {protocol ? `Phase ${currentPhaseIndex + 1} / ${totalPhases}` : '未关联方案'}
+                              </div>
+                              {protocol && (
+                                <div className="w-24 h-1 bg-slate-100 rounded-full overflow-hidden">
+                                  <div 
+                                    className="h-full bg-emerald-500 rounded-full transition-all duration-500" 
+                                    style={{ width: `${((currentPhaseIndex + 1) / totalPhases) * 100}%` }}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-6 md:px-8 py-4 md:py-5">
+                            <div className="flex items-center gap-2">
+                              <div className={`text-sm md:text-base font-black ${
+                                wrom.total >= 80 ? 'text-emerald-600' :
+                                wrom.total >= 60 ? 'text-amber-500' : 'text-rose-500'
+                              }`}>
+                                {wrom.total}
+                              </div>
+                              <div className="flex flex-col">
+                                <div className="flex gap-0.5">
+                                  {[...Array(4)].map((_, i) => (
+                                    <div 
+                                      key={i} 
+                                      className={`w-1 h-3 rounded-full ${
+                                        i === 0 ? (wrom.breakdown.compliance > 30 ? 'bg-emerald-400' : 'bg-slate-200') :
+                                        i === 1 ? (wrom.breakdown.inventory > 20 ? 'bg-blue-400' : 'bg-slate-200') :
+                                        i === 2 ? (wrom.breakdown.feeling > 15 ? 'bg-purple-400' : 'bg-slate-200') :
+                                        (wrom.breakdown.interaction > 5 ? 'bg-amber-400' : 'bg-slate-200')
+                                      }`}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 md:px-8 py-4 md:py-5 hidden sm:table-cell">
                             <div className="flex items-center gap-2">
                               <div className={`text-xs md:text-sm font-black ${
-                                !client.adherence_score ? 'text-slate-300' :
-                                client.adherence_score >= 90 ? 'text-emerald-600' :
-                                client.adherence_score >= 70 ? 'text-amber-500' : 'text-rose-500'
+                                wrom.breakdown.compliance >= 32 ? 'text-emerald-600' :
+                                wrom.breakdown.compliance >= 24 ? 'text-amber-500' : 'text-rose-500'
                               }`}>
-                                {client.adherence_score ? `${client.adherence_score}%` : '--'}
+                                {Math.round((wrom.breakdown.compliance / 40) * 100)}%
                               </div>
                               {client.adherence_trend === 'up' && <TrendingUp className="w-3 h-3 text-emerald-500" />}
                               {client.adherence_trend === 'down' && <TrendingDown className="w-3 h-3 text-rose-500" />}
                             </div>
                           </td>
-                          <td className="px-6 md:px-8 py-4 md:py-5">
-                            {minRemainingDays !== null ? (
-                              <div className="flex flex-col gap-1">
-                                <span className={`text-[9px] md:text-[10px] font-bold ${minRemainingDays < 3 ? 'text-rose-600' : minRemainingDays < 10 ? 'text-amber-600' : 'text-slate-400'}`}>
-                                  {minRemainingDays} 天断货
-                                </span>
-                                <div className="w-16 md:w-24 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                  <div 
-                                    className={`h-full transition-all duration-1000 ${minRemainingDays < 3 ? 'bg-rose-500' : minRemainingDays < 10 ? 'bg-amber-500' : 'bg-emerald-500'}`} 
-                                    style={{ width: `${Math.min(100, (minRemainingDays / 30) * 100)}%` }}
-                                  ></div>
-                                </div>
-                              </div>
-                            ) : (
-                              <span className="text-[10px] md:text-xs text-slate-300">未配置</span>
-                            )}
-                          </td>
                           <td className="px-6 md:px-8 py-4 md:py-5 hidden sm:table-cell">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-xs md:text-sm font-bold text-slate-700">{client.loyalty_points || 0}</span>
-                              {(client.loyalty_points || 0) >= 1000 && (
-                                <span className="text-[8px] md:text-[10px] bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded font-bold">高价值</span>
-                              )}
+                            <div className="flex items-center gap-2">
+                              <div className={`text-xs md:text-sm font-black ${
+                                wrom.breakdown.inventory >= 20 ? 'text-emerald-600' :
+                                wrom.breakdown.inventory >= 10 ? 'text-amber-500' : 'text-rose-500'
+                              }`}>
+                                {Math.round((wrom.breakdown.inventory / 30) * 100)}%
+                              </div>
                             </div>
                           </td>
                           <td className="px-6 md:px-8 py-4 md:py-5 text-[10px] md:text-sm text-slate-500 font-medium hidden md:table-cell">
@@ -1927,10 +1958,10 @@ function DashboardContent() {
               {['compliance', 'inventory', 'symptom', 'growth', 'points'].map(category => {
                 const categoryTriggers = triggers.filter(t => t.category === category);
                 // 默认积分规则
-                const defaultPointRules = [
-                  { id: 'p1', name: '每日打卡奖励', description: '第一天打卡获得基础积分', category: 'points', condition: { type: 'adherence_streak', threshold: 1 }, action: { type: 'push_red_dot', label: '积分奖励', priority: 'low', payload_template: '1' } },
-                  { id: 'p3', name: '连续打卡阶梯奖励', description: '连续打卡 3 天额外获得积分', category: 'points', condition: { type: 'adherence_streak', threshold: 3 }, action: { type: 'push_red_dot', label: '额外积分', priority: 'high', payload_template: '1' } },
-                  { id: 'p7', name: '满周打卡大奖', description: '连续打卡 7 天获得最高奖励', category: 'points', condition: { type: 'adherence_streak', threshold: 7 }, action: { type: 'push_red_dot', label: '周奖励', priority: 'critical', payload_template: '2' } }
+                const defaultPointRules: ProtocolTrigger[] = [
+                  { id: 'p1', name: '每日打卡奖励', description: '第一天打卡获得基础积分', category: 'points', condition: { type: 'adherence_streak', threshold: 1 }, action: { type: 'push_red_dot', label: '积分奖励', priority: 'low', payload_template: '1' }, is_enabled: true, updated_at: new Date().toISOString() },
+                  { id: 'p3', name: '连续打卡阶梯奖励', description: '连续打卡 3 天额外获得积分', category: 'points', condition: { type: 'adherence_streak', threshold: 3 }, action: { type: 'push_red_dot', label: '额外积分', priority: 'high', payload_template: '1' }, is_enabled: true, updated_at: new Date().toISOString() },
+                  { id: 'p7', name: '满周打卡大奖', description: '连续打卡 7 天获得最高奖励', category: 'points', condition: { type: 'adherence_streak', threshold: 7 }, action: { type: 'push_red_dot', label: '周奖励', priority: 'critical', payload_template: '2' }, is_enabled: true, updated_at: new Date().toISOString() }
                 ];
                 
                 const displayTriggers = category === 'points' && categoryTriggers.length === 0 ? defaultPointRules : categoryTriggers;
@@ -2028,8 +2059,9 @@ function DashboardContent() {
                       </div>
                     ))}
                   </div>
-                </div>
-              ))}
+                  </div>
+                );
+              })}
             </div>
           </div>
         );

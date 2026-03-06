@@ -10,7 +10,7 @@ import {
   mockFeedbacks,
   mockWeightLogs
 } from '../../../mp/src/mocks/data';
-import { Client, Product, Protocol, ProtocolTrigger, Ingredient, FollowUpNote, ConflictRule, UserTask, Feedback, WeightLog, CheckinLog } from '@healthcare/shared';
+import { Client, Product, Protocol, ProtocolTrigger, Ingredient, FollowUpNote, ConflictRule, UserTask, Feedback, WeightLog, CheckinLog, HealthMetric } from '@healthcare/shared';
 import { cloud } from '../services/cloud';
 
 // --- 类型定义 ---
@@ -65,6 +65,15 @@ interface DataContextType {
   addUserLog: (clientId: string, log: Omit<FollowUpNote, 'id' | 'client_id' | 'practitioner_id' | 'created_at'>, tags?: string[]) => Promise<void>;
   calibrateInventory: (clientId: string, productId: string, stock: number) => Promise<void>;
   checkConflicts: (clientId: string, protocolId: string) => ConflictRule[]; // 新增：检测冲突逻辑
+  calculateWROMScore: (clientId: string) => { 
+    total: number; 
+    breakdown: { 
+      compliance: number; 
+      inventory: number; 
+      feeling: number; 
+      interaction: number; 
+    } 
+  }; // [v5.0] WROM 2.0 灵魂公式计算引擎
   refreshData: () => Promise<void>; // 新增：刷新数据
   isLoaded: boolean; // 新增：加载状态
 }
@@ -86,6 +95,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [feedbacks, setFeedbacks] = useState<Feedback[]>([]);
   const [weightLogs, setWeightLogs] = useState<WeightLog[]>([]);
   const [checkinLogs, setCheckinLogs] = useState<CheckinLog[]>([]);
+  const [healthMetrics, setHealthMetrics] = useState<HealthMetric[]>([]);
 
   // 2. 初始化数据逻辑
   const initData = async () => {
@@ -184,6 +194,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         withTimeout(cloud.getCollection<Feedback>('feedbacks')),
         withTimeout(cloud.getCollection<WeightLog>('weight_logs')),
         withTimeout(cloud.getCollection<CheckinLog>('checkin_logs')),
+        withTimeout(cloud.getCollection<HealthMetric>('health_metrics')),
       ];
 
       const results = await Promise.allSettled(fetchPromises);
@@ -191,12 +202,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const keys = [
         'hc_clients', 'hc_products', 'hc_triggers', 'hc_protocols', 
         'hc_ingredients', 'hc_import_batches', 'hc_user_tasks', 
-        'hc_conflict_rules', 'hc_feedbacks', 'hc_weight_logs', 'hc_checkin_logs'
+        'hc_conflict_rules', 'hc_feedbacks', 'hc_weight_logs', 'hc_checkin_logs',
+        'hc_health_metrics'
       ];
       const setters = [
         setClients, setProducts, setTriggers, setProtocols, 
         setIngredients, setImportBatches, setUserTasks, 
-        setConflictRules, setFeedbacks, setWeightLogs, setCheckinLogs
+        setConflictRules, setFeedbacks, setWeightLogs, setCheckinLogs,
+        setHealthMetrics
       ];
 
       results.forEach((res, i) => {
@@ -287,6 +300,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (isLoaded) localStorage.setItem('hc_checkin_logs', JSON.stringify(checkinLogs));
   }, [checkinLogs, isLoaded]);
+
+  useEffect(() => {
+    if (isLoaded) localStorage.setItem('hc_health_metrics', JSON.stringify(healthMetrics));
+  }, [healthMetrics, isLoaded]);
 
   // CRUD Operations with Cloud Sync
   const addClient = async (client: Client) => {
@@ -426,13 +443,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     await cloud.addItem('weight_logs', log);
   };
 
-  const addHealthMetric = async (metric: any) => {
+  const addHealthMetric = async (metric: HealthMetric) => {
+    setHealthMetrics(prev => [...prev, metric]);
     // 同时也存入 weight_logs 以保持兼容性，如果它是一个体重指标
     if (metric.metric_type === 'Weight') {
       const weightLog: WeightLog = {
         id: metric.id,
         client_id: metric.client_id,
-        weight_kg: metric.metric_value,
+        weight_kg: metric.metric_value || 0,
         recorded_at: metric.recorded_at || new Date().toISOString(),
         source: 'manual'
       };
@@ -446,35 +464,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setCheckinLogs(prev => [...prev, log]);
     await cloud.addItem('checkin_logs', log);
     
-    // 联动逻辑：打卡成功后，自动扣减客户库存
-    const client = clients.find(c => c.id === log.client_id);
-    if (client && log.product_id) {
-      const currentInventory = client.inventory_status || [];
-      const item = currentInventory.find(i => i.product_id === log.product_id);
-      if (item) {
-        // 简单扣减：假设每次打卡消耗 1 个单位（实际应根据 action.dosage_per_time 计算）
-        // 这里先做简单处理，后续在业务层可以传入更精确的扣减值
-        await calibrateInventory(log.client_id, log.product_id, Math.max(0, item.current_stock - 1));
-      }
-    }
+    // [v5.0] 联动逻辑已移至数据库触发器 (Supabase Trigger)
+    // 严禁在前端本地计算库存，确保原子性
   };
 
   const deleteCheckinLog = async (id: string) => {
-    const logToDelete = checkinLogs.find(l => l.id === id);
     setCheckinLogs(prev => prev.filter(l => l.id !== id));
     await cloud.deleteItem('checkin_logs', id);
 
-    // 联动逻辑：撤销打卡后，自动回退客户库存
-    if (logToDelete && logToDelete.client_id && logToDelete.product_id) {
-      const client = clients.find(c => c.id === logToDelete.client_id);
-      if (client) {
-        const currentInventory = client.inventory_status || [];
-        const item = currentInventory.find(i => i.product_id === logToDelete.product_id);
-        if (item) {
-          await calibrateInventory(logToDelete.client_id, logToDelete.product_id, item.current_stock + 1);
-        }
-      }
-    }
+    // [v5.0] 联动逻辑已移至数据库触发器 (Supabase Trigger)
+    // 撤销打卡后的库存回退由数据库自动完成
   };
 
   const addIngredient = async (ingredient: Ingredient) => {
@@ -518,16 +517,22 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     let dailyUsage = 0;
     
     if (protocol) {
-      // 找到该产品在配方中的所有动作，计算总用量
-      protocol.phases.forEach(phase => {
-        phase.actions.forEach(action => {
+      // 找到当前阶段 (如果没有 current_phase_index 则默认第 0 个)
+      const currentPhaseIndex = client.current_phase_index || 0;
+      const currentPhase = protocol.phases[currentPhaseIndex];
+      
+      if (currentPhase) {
+        // 找到该产品在当前阶段中的所有动作，计算总用量
+        currentPhase.actions.forEach(action => {
           if (action.product_id === productId) {
             const freq = action.frequency_per_day || 0;
-            const dosage = parseFloat(action.dosage_per_time) || 0;
+            const dosageStr = action.dosage_per_time || '0';
+            // 处理可能的单位后缀，如 "2粒", "10ml"
+            const dosage = parseFloat(dosageStr.replace(/[^\d.]/g, '')) || 0;
             dailyUsage += freq * dosage;
           }
         });
-      });
+      }
     }
 
     const remainingDays = dailyUsage > 0 ? Math.floor(stock / dailyUsage) : 999;
@@ -562,6 +567,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     };
 
     await updateClient(updatedClient, { inventory_status: updatedInventory });
+    // 校准后立即触发一次数据刷新
+    await refreshData();
   };
 
   const checkConflicts = (clientId: string, protocolId: string): ConflictRule[] => {
@@ -593,6 +600,136 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     });
 
     return foundConflicts;
+  };
+
+  /**
+   * [v5.0] WROM 2.0 灵魂公式计算引擎
+   * 计算指定客户的复购指数 R = 依从性(40) + 库存(30) + 体感(20) + 互动(10)
+   */
+  const calculateWROMScore = (clientId: string) => {
+    const client = clients.find(c => c.id === clientId);
+    if (!client) return { total: 0, breakdown: { compliance: 0, inventory: 0, feeling: 0, interaction: 0 } };
+
+    const now = new Date();
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+
+    // 1. 依从性 (40%)
+    let complianceScore = 0;
+    const protocol = protocols.find(p => p.id === client.protocol_id);
+    if (protocol) {
+      const actualCheckins = checkinLogs.filter(log => 
+        log.client_id === clientId && 
+        log.is_taken && 
+        new Date(log.taken_at) >= sevenDaysAgo
+      ).length;
+
+      let expectedCheckinsPerDay = 0;
+      protocol.phases.forEach(phase => {
+        phase.actions.forEach(action => {
+          expectedCheckinsPerDay += (action.frequency_per_day || 0);
+        });
+      });
+      
+      const expectedCheckins = expectedCheckinsPerDay * 7;
+      if (expectedCheckins > 0) {
+        complianceScore = Math.min(40, (actualCheckins / expectedCheckins) * 40);
+      }
+    }
+
+    // 2. 库存水位 (30%)
+    let inventoryScore = 0;
+    if (client.inventory_status && client.inventory_status.length > 0) {
+      // 取所有产品的平均水位得分
+      const itemScores = client.inventory_status.map(item => {
+        // 假设 initial_stock 在此处简化为 current + 已消耗(过去7天)
+        // 实际业务中应记录校准时的初始值，此处做逻辑模拟
+        const consumed = checkinLogs.filter(log => 
+          log.client_id === clientId && 
+          log.product_id === item.product_id && 
+          log.is_taken && 
+          new Date(log.taken_at) >= sevenDaysAgo
+        ).length;
+        
+        // 简单模拟 Initial = Current + Consumed
+        const initial = item.current_stock + consumed;
+        if (initial === 0) return 0;
+        return (1 - (item.current_stock / initial)) * 30;
+      });
+      inventoryScore = itemScores.reduce((a, b) => a + b, 0) / itemScores.length;
+      inventoryScore = Math.max(0, Math.min(30, inventoryScore));
+    }
+
+    // 3. 体感趋势 (20%)
+    let feelingScore = 15; // 默认基础分
+    
+    // 从 healthMetrics 中提取 1-10 分制的体感指标
+    const getAvgFeelingForPeriod = (startDate: Date, endDate: Date) => {
+      const periodMetrics = healthMetrics.filter(m => 
+        m.client_id === clientId && 
+        ['MoodScore', 'EnergyScore', 'SleepScore', 'BowelScore'].includes(m.metric_type) &&
+        new Date(m.recorded_at) >= startDate &&
+        new Date(m.recorded_at) < endDate
+      );
+
+      if (periodMetrics.length === 0) return 5; // 默认中等分
+
+      // 按日期分组计算每日平均，再求周平均
+      const dailyAverages: number[] = [];
+      const metricsByDate: Record<string, number[]> = {};
+
+      periodMetrics.forEach(m => {
+        const dateKey = new Date(m.recorded_at).toISOString().split('T')[0];
+        if (!metricsByDate[dateKey]) metricsByDate[dateKey] = [];
+        metricsByDate[dateKey].push(m.metric_value || 5);
+      });
+
+      Object.values(metricsByDate).forEach(values => {
+        dailyAverages.push(values.reduce((a, b) => a + b, 0) / values.length);
+      });
+
+      return dailyAverages.reduce((a, b) => a + b, 0) / dailyAverages.length;
+    };
+
+    const sCurr = getAvgFeelingForPeriod(sevenDaysAgo, now);
+    const sLast = getAvgFeelingForPeriod(fourteenDaysAgo, sevenDaysAgo);
+
+    if (sCurr >= sLast) {
+      feelingScore = Math.min(20, 15 + (sCurr - sLast) * 5);
+    } else {
+      feelingScore = Math.max(0, 15 - (sLast - sCurr) * 10);
+    }
+
+    // 4. 互动活跃 (10%)
+    let interactionScore = 0;
+    const clientMessages = feedbacks.filter(f => 
+      f.client_id === clientId && 
+      f.sender_type === 'client' && 
+      new Date(f.created_at) >= sevenDaysAgo
+    ).length;
+    
+    const msgScore = Math.min(6, clientMessages * 2);
+
+    const practitionerMsgs = feedbacks.filter(f => 
+      f.client_id === clientId && 
+      f.sender_type === 'practitioner' && 
+      new Date(f.created_at) >= sevenDaysAgo
+    );
+    const readMsgs = practitionerMsgs.filter(m => m.is_read).length;
+    const readRate = practitionerMsgs.length > 0 ? readMsgs / practitionerMsgs.length : 1;
+    const rateScore = readRate * 4;
+
+    interactionScore = Math.min(10, msgScore + rateScore);
+
+    return {
+      total: Math.round(complianceScore + inventoryScore + feelingScore + interactionScore),
+      breakdown: {
+        compliance: Math.round(complianceScore),
+        inventory: Math.round(inventoryScore),
+        feeling: Math.round(feelingScore),
+        interaction: Math.round(interactionScore)
+      }
+    };
   };
 
   const bulkAddProducts = async (newProducts: Product[], batchId: string) => {
@@ -679,6 +816,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           addUserLog,
           calibrateInventory,
           checkConflicts,
+          calculateWROMScore,
           refreshData,
           isLoaded,
         }}

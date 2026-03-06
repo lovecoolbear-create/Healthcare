@@ -10,18 +10,20 @@ const inter = Inter({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: "HealthCare Practitioner Dashboard",
   description: "Productivity tool for nutritionists",
-  manifest: "/manifest.json",
+  manifest: "/manifest-v12.json?v=FINAL_V5",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "HealthCare",
-    startupImage: [
-      {
-        url: 'https://cdn-icons-png.flaticon.com/512/3063/3063822.png',
-        media: '(device-width: 320px) and (device-height: 568px) and (-webkit-device-pixel-ratio: 2)',
-      },
-    ],
+    title: "HC Pro V12",
   },
+  other: {
+    "version": "1.2.0-FINAL-V5",
+    "apple-mobile-web-app-capable": "yes",
+    "mobile-web-app-capable": "yes",
+    "cache-control": "no-cache, no-store, must-revalidate",
+    "pragma": "no-cache",
+    "expires": "0"
+  }
 };
 
 export const viewport = "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0";
@@ -34,31 +36,33 @@ export default function RootLayout({
   return (
     <html lang="zh-CN">
       <head>
-        <Script id="unregister-sw-aggressive" strategy="beforeInteractive">
+        <Script id="sw-registration" strategy="afterInteractive">
           {`
+            // 彻底清理并停用旧的 Service Worker
             if ('serviceWorker' in navigator) {
               navigator.serviceWorker.getRegistrations().then(function(registrations) {
                 for(let registration of registrations) {
                   registration.unregister();
-                  console.log('[System] ServiceWorker Unregistered Aggressively');
+                  console.log('SW unregistered');
+                }
+              });
+              
+              // 重新注册一个只管清缓存的 SW
+              window.addEventListener('load', function() {
+                navigator.serviceWorker.register('/sw.js?v=V5_FINAL').then(function(reg) {
+                  console.log('New SW registered');
+                });
+              });
+            }
+            
+            // 彻底清理所有缓存存储
+            if ('caches' in window) {
+              caches.keys().then(function(names) {
+                for (let name of names) {
+                  caches.delete(name);
                 }
               });
             }
-            // 终极 HTML 层级监控
-            window.addEventListener('touchstart', function(e) {
-              console.log('[HTML Touch]', e.target.tagName, e.target.className);
-              const indicator = document.createElement('div');
-              indicator.style.position = 'fixed';
-              indicator.style.top = '10px';
-              indicator.style.right = '10px';
-              indicator.style.background = 'red';
-              indicator.style.color = 'white';
-              indicator.style.padding = '5px';
-              indicator.style.zIndex = '999999';
-              indicator.innerText = 'Touch: ' + e.target.tagName;
-              document.body.appendChild(indicator);
-              setTimeout(() => indicator.remove(), 1000);
-            }, true);
           `}
         </Script>
       </head>

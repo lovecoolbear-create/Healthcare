@@ -448,6 +448,61 @@ export const mockGlobalTriggers: ProtocolTrigger[] = [
     },
     is_enabled: true,
     updated_at: new Date().toISOString()
+  },
+  // 5. 积分规则 (Points Triggers)
+  {
+    id: 'trig-9',
+    category: 'points',
+    name: '基础打卡奖励',
+    description: '每日坚持的动力',
+    condition: {
+      type: 'adherence_streak',
+      threshold: 1
+    },
+    action: {
+      type: 'push_red_dot',
+      priority: 'low',
+      label: '【积分入账】',
+      payload_template: '1' // 1 point
+    },
+    is_enabled: true,
+    updated_at: new Date().toISOString()
+  },
+  {
+    id: 'trig-10',
+    category: 'points',
+    name: '连续 3 天额外奖励',
+    description: '建立初步习惯',
+    condition: {
+      type: 'adherence_streak',
+      threshold: 3
+    },
+    action: {
+      type: 'push_red_dot',
+      priority: 'low',
+      label: '【额外积分】',
+      payload_template: '1' // +1 extra point
+    },
+    is_enabled: true,
+    updated_at: new Date().toISOString()
+  },
+  {
+    id: 'trig-11',
+    category: 'points',
+    name: '连续 7 天大奖',
+    description: '达成首周目标',
+    condition: {
+      type: 'adherence_streak',
+      threshold: 7
+    },
+    action: {
+      type: 'push_red_dot',
+      priority: 'medium',
+      label: '【里程碑大奖】',
+      payload_template: '2' // +2 extra points
+    },
+    is_enabled: true,
+    updated_at: new Date().toISOString()
   }
 ];
 

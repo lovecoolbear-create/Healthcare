@@ -8,12 +8,28 @@
   --background-end-rgb: 255, 255, 255;
 }
 
+html,
+body {
+  height: 100%;
+  width: 100%;
+  overflow-x: hidden;
+  /* 禁止 iOS 浏览器的下拉橡皮筋效果和横向晃动 */
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+}
+
 body {
   color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-      to bottom,
-      transparent,
-      rgb(var(--background-end-rgb))
-    )
-    rgb(var(--background-start-rgb));
+  background: white;
+  /* 确保页面始终占满屏幕，不随手指晃动 */
+  position: relative;
 }
+
+/* 针对 iOS PWA 模式的额外优化 */
+@supports (padding: env(safe-area-inset-top)) {
+  body {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+

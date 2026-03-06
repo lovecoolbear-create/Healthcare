@@ -87,12 +87,14 @@ export interface Client {
   missed_days?: number; // 连续未打卡天数 (PDR 3.1)
   loyalty_points?: number; // 积分系统 (PDR 扩展：打卡奖励)
   checkin_streak?: number; // 连续打卡天数 (Streak)
+  last_checkin_at?: string; // 最近一次打卡时间
   
   // 告警静默规则相关字段 (PDR 1.4)
   last_alert_at?: string; // 最近一次告警触发时间
   last_alert_priority?: 'low' | 'medium' | 'high' | 'critical'; // 最近一次告警优先级
   
   status_label?: string; // [v3.9] 手动标注的客户状态 (如: "减脂中", "动力下降")
+  current_phase_index?: number; // [v5.0] 当前方案执行阶段索引 (0-indexed)
   
   slug: string; // URL 混淆 Slug (Random UUID for client access)
   push_subscription?: string; // PWA Web Push Subscription (JSON string)
@@ -214,7 +216,7 @@ export interface ProtocolTrigger {
   id: string;
   name: string;
   description?: string;
-  category: 'compliance' | 'inventory' | 'symptom' | 'growth';
+  category: 'compliance' | 'inventory' | 'symptom' | 'growth' | 'points';
   is_enabled: boolean;
   updated_at: string;
   client_id?: string; // 所属客户 ID (可选，若为空则为全局)
