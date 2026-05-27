@@ -1,0 +1,3370 @@
+'use strict';
+const db = uniCloud.database();
+const usersCollection = db.collection('he_users');
+const plansCollection = db.collection('he_daily_plans');
+const inventoryCollection = db.collection('he_inventory');
+const inventoryLogsCollection = db.collection('he_inventory_logs');
+const healthLogsCollection = db.collection('he_health_logs');
+const refillRequestsCollection = db.collection('he_refill_requests');
+const protocolsCollection = db.collection('he_user_protocols');
+const interactionLogsCollection = db.collection('he_interaction_logs');
+const productsCollection = db.collection('he_products');
+const ordersCollection = db.collection('he_orders');
+const knowledgeCollection = db.collection('he_knowledge_base');
+const templatesCollection = db.collection('he_templates');
+const notificationsCollection = db.collection('he_notifications');
+const followUpActionsCollection = db.collection('he_followup_actions');
+const cmd = db.command;
+
+exports.main = async (event, context) => {
+  const { action, payload = {} } = event;
+  // userId should be validated from token in a real app, 
+  // but here we trust the payload or context if middleware is used.
+  // For this demo, we use payload.userId.
+  const userId = payload.userId;
+
+  switch (action) {
+    case 'getProducts': {
+      // 产品库是全局共享的，不需要用户权限验证
+    if (currentUserRes.data.length === 0) {
+      return { code: 401, msg: 'Unauthorized: user not found' };
+    }
+    const currentUser = currentUserRes.data[0];
+    const requireAdmin = () => {
+      if (currentUser.role !== 'admin') {
+        return { code: 403, msg: 'Permission denied' };
+      }
+      return null;
+    };
+    const writeInventoryLog = async (record = {}) => {
+      const {
+        targetUserId = userId,
+        inventoryId = '',
+        productId = '',
+        itemName = '',
+        changeType = 'manual_adjust',
+        delta = 0,
+        beforeStock = 0,
+        afterStock = 0,
+        referenceType = '',
+        referenceId = '',
+        remark = ''
+      } = record;
+      await inventoryLogsCollection.add({
+        user_id: targetUserId,
+        inventory_id: inventoryId,
+        product_id: productId,
+        item_name: itemName,
+        change_type: changeType,
+        delta: Number(delta || 0),
+        before_stock: Number(beforeStock || 0),
+        after_stock: Number(afterStock || 0),
+        reference_type: referenceType,
+        reference_id: referenceId,
+        remark,
+        operator_id: userId,
+        operator_role: currentUser.role || 'client',
+        created_at: Date.now()
+      });
+    };
+    const hasInventoryFootprint = async (targetUserId) => {
+      const [planRes, orderRes, logRes] = await Promise.all([
+        plansCollection.where({ user_id: targetUserId }).limit(1).get(),
+        ordersCollection.where({ user_id: targetUserId }).limit(1).get(),
+        inventoryLogsCollection.where({ user_id: targetUserId }).limit(1).get()
+      ]);
+      return planRes.data.length > 0 || orderRes.data.length > 0 || logRes.data.length > 0;
+    };
+    const getCheckInSummary = (planDoc) => {
+      const tasks = Array.isArray(planDoc?.tasks) ? planDoc.tasks : [];
+      const total = tasks.length;
+      const completed = tasks.filter(task => !!task?.completed).length;
+      let status = 'not_started';
+      if (total > 0 && completed >= total) {
+        status = 'completed';
+      } else if (completed > 0) {
+        status = 'partial';
+      }
+      return {
+        date: planDoc?.date || '',
+        total,
+        completed,
+        status,
+        completion_rate: total > 0 ? Math.round((completed / total) * 100) : 0
+      };
+    };
+    const getUserDisplayName = (user = {}) => {
+      if (user?.username) return String(user.username);
+      if (user?.nickname) return String(user.nickname);
+      if (user?.phone) return `用户${String(user.phone).slice(-4)}`;
+      return '用户';
+    };
+    const writeSystemInteractionLog = async (options = {}) => {
+      const {
+        targetUserId = '',
+        nutritionistId = '',
+        nutritionistName = '营养顾问',
+        content = '',
+        followUpStatus = '跟进中'
+      } = options;
+      if (!targetUserId || !nutritionistId || !content) return;
+      await interactionLogsCollection.add({
+        user_id: String(targetUserId),
+        nutritionist_id: String(nutritionistId),
+        nutritionist_name: String(nutritionistName || '营养顾问'),
+        sender_role: 'system',
+        type: 'system',
+        content: String(content),
+        follow_up_status: String(followUpStatus || '跟进中'),
+        created_at: Date.now()
+      });
+    };
+    const writeNotificationEvent = async (payload = {}) => {
+      const {
+        targetUserId = '',
+        nutritionistId = '',
+        targetRole = 'client',
+        title = '',
+        content = '',
+        category = 'general',
+        channel = 'in_app',
+        referenceType = '',
+        referenceId = '',
+        metadata = {}
+      } = payload;
+      if (!targetUserId || !title || !content) return;
+      await notificationsCollection.add({
+        target_user_id: String(targetUserId),
+        nutritionist_id: String(nutritionistId || ''),
+        target_role: String(targetRole || 'client'),
+        title: String(title),
+        content: String(content),
+        category: String(category || 'general'),
+        channel: String(channel || 'in_app'),
+        reference_type: String(referenceType || ''),
+        reference_id: String(referenceId || ''),
+        metadata: typeof metadata === 'object' && metadata ? metadata : {},
+        read_at: null,
+        created_at: Date.now(),
+        updated_at: Date.now()
+      });
+    };
+    const isProtocolMatchedInventory = (inventoryItem, protocolItem) => {
+      if (!inventoryItem || !protocolItem) return false;
+      if (inventoryItem.product_id && protocolItem.product_id) {
+        return String(inventoryItem.product_id) === String(protocolItem.product_id);
+      }
+      if (inventoryItem.name && protocolItem.product_name) {
+        return String(inventoryItem.name).trim().toLowerCase() === String(protocolItem.product_name).trim().toLowerCase();
+      }
+      return false;
+    };
+    const getInventorySummary = (inventoryList = [], protocolItems = [], options = {}) => {
+      const lowStockDays = Number(options?.lowStockDays || 0);
+      if (!protocolItems.length) {
+        return {
+          status: 'empty',
+          total_count: 0,
+          low_count: 0,
+          low_items: []
+        };
+      }
+      const targetInventory = inventoryList.filter((inventoryItem) =>
+        protocolItems.some((protocolItem) => isProtocolMatchedInventory(inventoryItem, protocolItem))
+      );
+      let lowCount = 0;
+      const lowItems = [];
+      targetInventory.forEach((inventoryItem) => {
+        const threshold = Number(inventoryItem?.low_stock_threshold ?? 1);
+        const stock = Number(inventoryItem?.stock ?? 0);
+        const matchedProtocolItem = protocolItems.find((protocolItem) => isProtocolMatchedInventory(inventoryItem, protocolItem)) || null;
+        const capacity = Number(inventoryItem?.capacity || 1);
+        const dailyUsage = Number(matchedProtocolItem?.daily_usage || inventoryItem?.daily_usage || 0);
+        const canEstimateDays = capacity > 0 && dailyUsage > 0;
+        const daysRemaining = canEstimateDays ? Number(((stock * capacity) / dailyUsage).toFixed(1)) : null;
+        const lowByThreshold = stock <= threshold;
+        const lowByDays = lowStockDays > 0 && daysRemaining !== null && daysRemaining <= lowStockDays;
+        if (lowByThreshold || lowByDays) {
+          lowCount += 1;
+          lowItems.push({
+            item_id: inventoryItem?._id || '',
+            item_name: inventoryItem?.name || '待补货产品',
+            stock,
+            threshold,
+            days_remaining: daysRemaining
+          });
+        }
+      });
+      let status = 'normal';
+      if (!targetInventory.length) {
+        status = 'empty';
+      } else if (lowCount > 0) {
+        status = 'low';
+      }
+      return {
+        status,
+        total_count: targetInventory.length,
+        low_count: lowCount,
+        low_items: lowItems
+      };
+    };
+    const getTriggerConfig = async (nutritionistId = '') => {
+      const fallback = {
+        wromThreshold: 60,
+        inventoryDaysRemaining: 5,
+        notifyAdmin: true,
+        autoPush: false
+      };
+      const ownerId = String(nutritionistId || userId || '');
+      if (!ownerId) return fallback;
+      try {
+        const triggerCollection = db.collection('he_triggers');
+        const res = await triggerCollection.where({ nutritionist_id: ownerId }).get();
+        const triggerList = Array.isArray(res?.data) ? res.data : [];
+        const wromTrigger = triggerList.find((item) => String(item?.key || '') === 'wrom_low_score');
+        const inventoryTrigger = triggerList.find((item) => String(item?.key || '') === 'inventory_low');
+        const wromThreshold = Number(wromTrigger?.config?.threshold ?? fallback.wromThreshold);
+        const inventoryDaysRemaining = Number(inventoryTrigger?.config?.days_remaining ?? fallback.inventoryDaysRemaining);
+        return {
+          wromThreshold: Number.isFinite(wromThreshold) ? Math.max(1, Math.min(100, wromThreshold)) : fallback.wromThreshold,
+          inventoryDaysRemaining: Number.isFinite(inventoryDaysRemaining) ? Math.max(1, Math.min(365, inventoryDaysRemaining)) : fallback.inventoryDaysRemaining,
+          notifyAdmin: Boolean(wromTrigger?.config?.notify_admin ?? fallback.notifyAdmin),
+          autoPush: Boolean(inventoryTrigger?.config?.auto_push ?? fallback.autoPush)
+        };
+      } catch (error) {
+        return fallback;
+      }
+    };
+    const createFollowUpActionRecord = async (options = {}) => {
+      const {
+        targetUserId = '',
+        nutritionistId = '',
+        title = '跟进行动',
+        suggestion = '',
+        actionNote = '',
+        clientFeedback = '',
+        source = 'manual',
+        baselineWrom = 0,
+        baselineRps = 0
+      } = options;
+      const now = Date.now();
+      const reviewDueAt = now + 3 * 24 * 60 * 60 * 1000;
+      const addRes = await followUpActionsCollection.add({
+        user_id: String(targetUserId || ''),
+        nutritionist_id: String(nutritionistId || ''),
+        title: String(title || '跟进行动'),
+        suggestion: String(suggestion || ''),
+        action_note: String(actionNote || ''),
+        client_feedback: String(clientFeedback || ''),
+        source: String(source || 'manual'),
+        status: 'executed',
+        created_at: now,
+        executed_at: now,
+        review_due_at: reviewDueAt,
+        reviewed_at: 0,
+        baseline_wrom: Number(baselineWrom || 0),
+        baseline_rps: Number(baselineRps || 0),
+        result_wrom: null,
+        result_rps: null,
+        delta_wrom: null,
+        delta_rps: null,
+        regression_level: '',
+        updated_at: now
+      });
+      return String(addRes.id || '');
+    };
+    const reviewDueFollowUpActions = async (targetUserId = '') => {
+      if (!targetUserId) return;
+      const now = Date.now();
+      const oneDay = 24 * 60 * 60 * 1000;
+      const dueRes = await followUpActionsCollection.where({
+        user_id: String(targetUserId),
+        status: 'executed',
+        review_due_at: cmd.lte(now)
+      }).orderBy('review_due_at', 'asc').limit(5).get();
+      const dueActions = Array.isArray(dueRes.data) ? dueRes.data : [];
+      if (!dueActions.length) return;
+      await doCalculateWROM(String(targetUserId));
+      const userRes = await usersCollection.doc(String(targetUserId)).field({ wrom_score: true, rps_score: true, username: true, nickname: true }).get();
+      const userRow = userRes.data[0] || {};
+      const currentWrom = Number(userRow?.wrom_score || 0);
+      const currentRps = Number(userRow?.rps_score || 0);
+      await Promise.all(dueActions.map(async (action) => {
+        const baselineWrom = Number(action?.baseline_wrom || 0);
+        const baselineRps = Number(action?.baseline_rps || 0);
+        const deltaWrom = currentWrom - baselineWrom;
+        const deltaRps = currentRps - baselineRps;
+        const regressionLevel = deltaRps <= -8 ? 'high' : (deltaRps <= -4 ? 'medium' : (deltaRps < 0 ? 'low' : ''));
+        await followUpActionsCollection.doc(String(action._id || '')).update({
+          status: 'reviewed',
+          reviewed_at: now,
+          result_wrom: currentWrom,
+          result_rps: currentRps,
+          delta_wrom: deltaWrom,
+          delta_rps: deltaRps,
+          regression_level: regressionLevel,
+          updated_at: now
+        });
+        if (deltaRps < 0) {
+          const targetNutritionistId = String(action?.nutritionist_id || '');
+          if (targetNutritionistId) {
+            const dedupeRes = await notificationsCollection.where({
+              target_role: 'admin',
+              target_user_id: targetNutritionistId,
+              category: 'followup_review_regression',
+              reference_type: 'followup_action',
+              reference_id: String(action?._id || ''),
+              created_at: db.command.gte(now - oneDay)
+            }).limit(1).get();
+            if (!Array.isArray(dedupeRes.data) || dedupeRes.data.length === 0) {
+              await notificationsCollection.add({
+                target_user_id: targetNutritionistId,
+                target_role: 'admin',
+                nutritionist_id: targetNutritionistId,
+                title: '行动复核预警',
+                content: `客户 ${userRow?.username || userRow?.nickname || '未命名'} 的复核结果 RPS 下降 ${Math.abs(deltaRps)} 分，请优先跟进。`,
+                category: 'followup_review_regression',
+                channel: 'in_app',
+                reference_type: 'followup_action',
+                reference_id: String(action?._id || ''),
+                metadata: {
+                  client_id: String(targetUserId || ''),
+                  delta_rps: deltaRps,
+                  delta_wrom: deltaWrom,
+                  regression_level: regressionLevel
+                },
+                created_at: now,
+                updated_at: now
+              });
+            }
+          }
+          await usersCollection.doc(String(targetUserId || '')).update({
+            follow_up_status: '待回复',
+            follow_up_updated_at: now,
+            updated_at: now
+          });
+        }
+      }));
+    };
+    const getClientFollowUpActions = async (targetUserId = '') => {
+      if (!targetUserId) return [];
+      const res = await followUpActionsCollection.where({ user_id: String(targetUserId) }).orderBy('created_at', 'desc').limit(20).get();
+      return Array.isArray(res.data) ? res.data : [];
+    };
+    const splitChunks = (items = [], chunkSize = 50) => {
+      const chunks = [];
+      for (let i = 0; i < items.length; i += chunkSize) {
+        chunks.push(items.slice(i, i + chunkSize));
+      }
+      return chunks;
+    };
+    const queryByUserIds = async (collection, userIds = [], extraWhere = {}, options = {}) => {
+      const ids = Array.from(new Set((userIds || []).filter(Boolean).map(id => String(id))));
+      if (!ids.length) return [];
+      const {
+        chunkSize = 50,
+        limit = 1000,
+        orderBy = null,
+        field = null
+      } = options;
+      const chunks = splitChunks(ids, chunkSize);
+      const result = await Promise.all(chunks.map(async (chunkIds) => {
+        let query = collection.where({
+          ...extraWhere,
+          user_id: cmd.in(chunkIds)
+        });
+        if (orderBy?.field) {
+          query = query.orderBy(orderBy.field, orderBy.order || 'desc');
+        }
+        if (field) {
+          query = query.field(field);
+        }
+        const res = await query.limit(limit).get();
+        return res.data || [];
+      }));
+      return result.flat();
+    };
+    const isManagedClientByAdmin = (client = {}) => {
+      if (currentUser.role !== 'admin') return true;
+      const nutritionistId = String(client?.nutritionist_id || '');
+      if (nutritionistId) return nutritionistId === String(userId);
+      return String(client?.created_by || '') === String(userId);
+    };
+    const fetchManagedClients = async ({ field = null, orderBy = null, limit = 2000 } = {}) => {
+      const [primaryRes, legacyRes] = await Promise.all([
+        usersCollection.where({ role: 'client', nutritionist_id: userId }).get(),
+        usersCollection.where({ role: 'client', created_by: userId }).get()
+      ]);
+      const mergedMap = new Map();
+      [...(primaryRes.data || []), ...(legacyRes.data || [])].forEach((client) => {
+        if (!client?._id) return;
+        mergedMap.set(String(client._id), client);
+      });
+      let clients = Array.from(mergedMap.values()).filter((client) => isManagedClientByAdmin(client));
+      if (orderBy?.field) {
+        const direction = orderBy.order === 'asc' ? 1 : -1;
+        const fieldName = orderBy.field;
+        clients = clients.sort((a, b) => {
+          const aVal = a?.[fieldName];
+          const bVal = b?.[fieldName];
+          const aNum = Number(aVal);
+          const bNum = Number(bVal);
+          const canUseNumber = !Number.isNaN(aNum) && !Number.isNaN(bNum);
+          if (canUseNumber) return (aNum - bNum) * direction;
+          return String(aVal || '').localeCompare(String(bVal || '')) * direction;
+        });
+      }
+      if (limit > 0 && clients.length > limit) {
+        clients = clients.slice(0, limit);
+      }
+      if (!field) return clients;
+      return clients.map((client) => {
+        const projected = {};
+        Object.keys(field).forEach((key) => {
+          if (field[key]) projected[key] = client[key];
+        });
+        if (!projected._id) projected._id = client._id;
+        return projected;
+      });
+    };
+    const normalizeProtocolSource = (value) => String(value || '').trim().toLowerCase();
+    const getProtocolSourceFingerprint = (protocol = {}) => {
+      const meta = protocol?.meta && typeof protocol.meta === 'object' ? protocol.meta : {};
+      const extra = protocol?.extra && typeof protocol.extra === 'object' ? protocol.extra : {};
+      const values = [
+        protocol?.source,
+        protocol?.protocol_source,
+        protocol?.created_source,
+        protocol?.created_via,
+        protocol?.created_platform,
+        protocol?.source_type,
+        protocol?.origin,
+        protocol?.channel,
+        protocol?.platform,
+        protocol?.from,
+        meta?.source,
+        meta?.platform,
+        meta?.channel,
+        extra?.source,
+        extra?.platform
+      ];
+      return values.map(normalizeProtocolSource).filter(Boolean).join('|');
+    };
+    const isTrustedProtocol = (protocol = {}) => getProtocolSourceFingerprint(protocol).includes('h5');
+    const selectLatestProtocol = (protocols = []) => {
+      if (!Array.isArray(protocols) || !protocols.length) return null;
+      const sorted = [...protocols].sort((a, b) => {
+        const aTs = Number(a?.updated_at || a?.created_at || 0);
+        const bTs = Number(b?.updated_at || b?.created_at || 0);
+        return bTs - aTs;
+      });
+      return sorted[0] || null;
+    };
+    const purgeUntrustedActiveProtocols = async ({ targetUserIds = [], clearPlansWhenNoTrusted = false } = {}) => {
+      const ids = Array.from(new Set((targetUserIds || []).filter(Boolean).map((id) => String(id))));
+      if (!ids.length) {
+        return {
+          removedProtocolCount: 0,
+          clearedPlanUserCount: 0,
+          affectedUserIds: [],
+          trustedProtocolMap: new Map()
+        };
+      }
+      const activeProtocols = await queryByUserIds(
+        protocolsCollection,
+        ids,
+        { status: 'active' },
+        { limit: 5000, orderBy: { field: 'updated_at', order: 'desc' } }
+      );
+      const trustedProtocolMap = new Map();
+      const untrustedProtocolIds = [];
+      const affectedUserIds = new Set();
+      activeProtocols.forEach((protocol) => {
+        const protocolId = String(protocol?._id || '');
+        const targetId = String(protocol?.user_id || '');
+        if (!protocolId || !targetId) return;
+        if (isTrustedProtocol(protocol)) {
+          if (!trustedProtocolMap.has(targetId)) trustedProtocolMap.set(targetId, []);
+          trustedProtocolMap.get(targetId).push(protocol);
+          return;
+        }
+        untrustedProtocolIds.push(protocolId);
+        affectedUserIds.add(targetId);
+      });
+      if (untrustedProtocolIds.length) {
+        await Promise.all(untrustedProtocolIds.map((id) => protocolsCollection.doc(id).remove()));
+      }
+      let clearedPlanUserCount = 0;
+      if (clearPlansWhenNoTrusted && affectedUserIds.size) {
+        const usersToClearPlans = Array.from(affectedUserIds).filter((targetId) => {
+          const trusted = trustedProtocolMap.get(targetId) || [];
+          return trusted.length === 0;
+        });
+        if (usersToClearPlans.length) {
+          const chunks = splitChunks(usersToClearPlans, 50);
+          await Promise.all(chunks.map((chunkIds) => plansCollection.where({ user_id: cmd.in(chunkIds) }).remove()));
+          clearedPlanUserCount = usersToClearPlans.length;
+        }
+      }
+      return {
+        removedProtocolCount: untrustedProtocolIds.length,
+        clearedPlanUserCount,
+        affectedUserIds: Array.from(affectedUserIds),
+        trustedProtocolMap
+      };
+    };
+    const getLatestTimestampByUserIds = async (collection, userIds = [], {
+      timeField = 'updated_at',
+      extraWhere = {},
+      fallbackTimeField = ''
+    } = {}) => {
+      const ids = Array.from(new Set((userIds || []).filter(Boolean).map(id => String(id))));
+      if (!ids.length) return 0;
+      const chunks = splitChunks(ids, 50);
+      let latest = 0;
+      await Promise.all(chunks.map(async (chunkIds) => {
+        let query = collection.where({
+          ...extraWhere,
+          user_id: cmd.in(chunkIds)
+        }).orderBy(timeField, 'desc').limit(1);
+        let res = await query.get();
+        let row = res.data?.[0] || null;
+        if (!row && fallbackTimeField) {
+          query = collection.where({
+            ...extraWhere,
+            user_id: cmd.in(chunkIds)
+          }).orderBy(fallbackTimeField, 'desc').limit(1);
+          res = await query.get();
+          row = res.data?.[0] || null;
+        }
+        if (row) {
+          const val = Number(row[timeField] || row[fallbackTimeField] || row.created_at || 0);
+          if (val > latest) latest = val;
+        }
+      }));
+      return latest;
+    };
+    const buildAdminSyncMeta = async () => {
+      const managedClients = await fetchManagedClients({
+        field: { _id: true, updated_at: true, created_at: true },
+        limit: 5000
+      });
+      const clientIds = managedClients.map((client) => String(client._id)).filter(Boolean);
+      const userLatest = managedClients.reduce((maxVal, client) => {
+        const ts = Number(client?.updated_at || client?.created_at || 0);
+        return ts > maxVal ? ts : maxVal;
+      }, 0);
+      const today = new Date().toISOString().split('T')[0];
+      const [planLatest, protocolLatest, inventoryLatest] = await Promise.all([
+        getLatestTimestampByUserIds(plansCollection, clientIds, {
+          timeField: 'updated_at',
+          extraWhere: { date: today },
+          fallbackTimeField: 'created_at'
+        }),
+        getLatestTimestampByUserIds(protocolsCollection, clientIds, {
+          timeField: 'updated_at',
+          extraWhere: { status: 'active' },
+          fallbackTimeField: 'created_at'
+        }),
+        getLatestTimestampByUserIds(inventoryCollection, clientIds, {
+          timeField: 'updated_at',
+          fallbackTimeField: 'created_at'
+        })
+      ]);
+      const latestUpdatedAt = Math.max(userLatest, planLatest, protocolLatest, inventoryLatest, 0);
+      return {
+        totalClients: clientIds.length,
+        latestUpdatedAt,
+        syncVersion: `${clientIds.length}_${latestUpdatedAt}`
+      };
+    };
+    const ensureManagedClient = async (clientId) => {
+      if (!clientId) return { error: { code: 400, msg: 'Client ID required' } };
+      const clientRes = await usersCollection.doc(clientId).get();
+      if (clientRes.data.length === 0 || clientRes.data[0].role !== 'client') {
+        return { error: { code: 404, msg: 'Client not found' } };
+      }
+      const client = clientRes.data[0];
+      if (currentUser.role === 'admin' && !isManagedClientByAdmin(client)) {
+        return { error: { code: 403, msg: 'Permission denied' } };
+      }
+      return { client };
+    };
+
+    switch (action) {
+      // --- User Info ---
+      case 'getUserInfo': {
+        const res = await usersCollection.doc(userId).get();
+        return { code: 0, data: res.data[0] || {} };
+      }
+
+      case 'getProtocolInfo': {
+        const userRes = await usersCollection.doc(userId).get();
+        if (userRes.data.length === 0) return { code: 404, msg: 'User not found' };
+        const user = userRes.data[0];
+        
+        let nutritionist = null;
+        // 尝试从 nutritionist_id 或 created_by 获取营养师 ID
+        const nutritionistId = user.nutritionist_id || user.created_by;
+        
+        if (nutritionistId) {
+          const nutRes = await usersCollection.doc(String(nutritionistId)).field({ username: true, avatar: true, phone: true }).get();
+          if (nutRes.data.length > 0) {
+            nutritionist = nutRes.data[0];
+          }
+        }
+        
+        // 如果还是没找到，尝试查找角色为 admin 且创建了该用户的账号 (作为兜底)
+        if (!nutritionist && user.role === 'client') {
+          const fallbackRes = await usersCollection.where({
+            role: 'admin',
+            _id: user.created_by
+          }).field({ username: true, avatar: true, phone: true }).get();
+          if (fallbackRes.data.length > 0) {
+            nutritionist = fallbackRes.data[0];
+          }
+        }
+        
+        const protocolRes = await protocolsCollection.where({ user_id: userId, status: 'active' }).get();
+        const protocol = selectLatestProtocol((protocolRes.data || []).filter((item) => isTrustedProtocol(item)));
+        
+        return { code: 0, data: { nutritionist, protocol } };
+      }
+
+      case 'getMyInteractionLogs': {
+        const [interactionsRes, legacyInteractionsRes] = await Promise.all([
+          interactionLogsCollection.where({ user_id: userId }).orderBy('created_at', 'desc').limit(100).get(),
+          interactionLogsCollection.where({ client_id: userId }).orderBy('created_at', 'desc').limit(100).get()
+        ]);
+        const interactionMap = new Map();
+        [...(interactionsRes.data || []), ...(legacyInteractionsRes.data || [])].forEach((item) => {
+          const key = item?._id ? String(item._id) : `${item?.created_at || 0}_${item?.content || ''}`;
+          if (!interactionMap.has(key)) interactionMap.set(key, item);
+        });
+        const interactions = Array.from(interactionMap.values())
+          .sort((a, b) => Number(b.created_at || 0) - Number(a.created_at || 0))
+          .slice(0, 100);
+        return { code: 0, data: interactions };
+      }
+
+      case 'markMyInteractionsRead': {
+        const readAt = Date.now();
+        await interactionLogsCollection.where({
+          user_id: userId,
+          sender_role: 'nutritionist'
+        }).update({
+          read_at: readAt
+        });
+        return { code: 0, data: { readAt } };
+      }
+
+      // --- Admin Actions ---
+      
+      case 'getDashboardData': {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const managedClients = await fetchManagedClients({ limit: 5000 });
+        const managedClientIds = managedClients.map(item => String(item._id)).filter(Boolean);
+        
+        // 1. 高风险客户 (WROM < 60)
+        const highRiskClients = managedClients
+          .filter((client) => Number(client?.wrom_score || 0) < 60)
+          .sort((a, b) => Number(a?.wrom_score || 0) - Number(b?.wrom_score || 0))
+          .slice(0, 10);
+        
+        // 2. 低库存客户 (批量查询优化)
+        const lowStockClients = [];
+        
+        // 批量获取所有客户的库存和协议
+        const clientIds = managedClients.map(client => String(client._id));
+        const [inventoryRes, protocolRes] = await Promise.all([
+          queryByUserIds(inventoryCollection, clientIds, {}, { limit: 1000 }),
+          queryByUserIds(protocolsCollection, clientIds, { status: 'active' }, { limit: 500 })
+        ]);
+        
+        // 构建映射表提高查找效率
+        const inventoryMap = new Map();
+        (inventoryRes.data || []).forEach(inv => {
+          inventoryMap.set(inv.user_id, (inventoryMap.get(inv.user_id) || []).concat(inv));
+        });
+        
+        const protocolMap = new Map();
+        (protocolRes.data || []).forEach(protocol => {
+          protocolMap.set(protocol.user_id, protocol);
+        });
+        
+        // 批量处理低库存检查
+        for (const client of managedClients) {
+          const clientId = String(client._id);
+          const inventory = inventoryMap.get(clientId) || [];
+          const protocol = protocolMap.get(clientId);
+          const protocolItems = protocol && protocol.items ? protocol.items : [];
+          
+          let lowStockCount = 0;
+          for (const protocolItem of protocolItems) {
+            const dailyUsage = Number(protocolItem.daily_usage || 0);
+            if (dailyUsage <= 0) continue;
+            
+            const inventoryItem = inventory.find(inv => 
+              inv.product_id === protocolItem.product_id || 
+              inv.name === protocolItem.product_name
+            );
+            
+            if (!inventoryItem) {
+              lowStockCount++;
+              continue;
+            }
+            
+            const stock = Number(inventoryItem.stock || 0);
+            const capacity = Number(inventoryItem.capacity || 1);
+            const daysRemaining = (stock * capacity) / dailyUsage;
+            const threshold = Number(inventoryItem.low_stock_threshold || 5);
+            
+            if (stock <= threshold || daysRemaining <= threshold) {
+              lowStockCount++;
+            }
+          }
+          
+          if (lowStockCount > 0) {
+            lowStockClients.push({
+              ...client,
+              lowStockCount,
+              totalItems: protocolItems.length
+            });
+          }
+        }
+        
+        // 3. 今日打卡率
+        const today = new Date().toISOString().split('T')[0];
+        const todayPlansRes = await plansCollection.where({
+          user_id: cmd.in(managedClientIds),
+          date: today
+        }).get();
+        
+        const todayPlans = todayPlansRes.data || [];
+        const activeTodayClients = new Set();
+        todayPlans.forEach(plan => {
+          const tasks = Array.isArray(plan.tasks) ? plan.tasks : [];
+          const hasCompletedTask = tasks.some(task => task.completed);
+          if (hasCompletedTask) {
+            activeTodayClients.add(plan.user_id);
+          }
+        });
+        
+        const todayCheckinRate = managedClientIds.length > 0 ? 
+          Math.round((activeTodayClients.size / managedClientIds.length) * 100) : 0;
+        
+        // 4. 待处理订单
+        const pendingOrdersRaw = await queryByUserIds(
+          ordersCollection,
+          managedClientIds,
+          { status: 0 },
+          { limit: 500, orderBy: { field: 'created_at', order: 'asc' } }
+        );
+        const pendingOrders = (pendingOrdersRaw || [])
+          .sort((a, b) => Number(a.created_at || 0) - Number(b.created_at || 0))
+          .slice(0, 10);
+        
+        // 5. 统计数据汇总
+        const stats = {
+          totalClients: managedClients.length,
+          highRiskCount: highRiskClients.length,
+          lowStockCount: lowStockClients.length,
+          todayCheckinRate,
+          pendingOrdersCount: pendingOrders.length
+        };
+        
+        return {
+          code: 0,
+          data: {
+            stats,
+            highRiskClients,
+            lowStockClients,
+            pendingOrders,
+            todayActiveClients: Array.from(activeTodayClients)
+          }
+        };
+      }
+
+      case 'shipOrder': {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const { orderId, trackingNo } = payload;
+        const normalizedTrackingNo = String(trackingNo || '').trim();
+        if (!normalizedTrackingNo) {
+          return { code: 400, msg: 'Tracking number required' };
+        }
+        
+        // 1. Validate Order
+        const orderRes = await ordersCollection.doc(orderId).get();
+        if (orderRes.data.length === 0) {
+          return { code: 404, msg: 'Order not found' };
+        }
+        const order = orderRes.data[0];
+        if (order?.nutritionist_id && String(order.nutritionist_id) !== String(userId)) {
+          return { code: 403, msg: 'Permission denied' };
+        }
+        if (!order?.nutritionist_id && order?.user_id) {
+          const orderUserRes = await usersCollection.doc(order.user_id).field({ nutritionist_id: true }).get();
+          const ownerNutritionistId = orderUserRes.data[0]?.nutritionist_id || '';
+          if (ownerNutritionistId && String(ownerNutritionistId) !== String(userId)) {
+            return { code: 403, msg: 'Permission denied' };
+          }
+        }
+        
+        // Check status to avoid double deduction
+        if (order.status !== 0) {
+          return { code: 400, msg: 'Order already processed' };
+        }
+
+        const orderItems = Array.isArray(order.items) ? order.items : [];
+        const deductionPlans = [];
+        for (const item of orderItems) {
+          const quantity = Number(item?.quantity || 0);
+          const productId = String(item?.product_id || '');
+          if (!productId || quantity <= 0) continue;
+          let productDoc = null;
+          let productDocId = '';
+          const byProductIdRes = await productsCollection.where({ product_id: productId }).limit(1).get();
+          if (byProductIdRes.data.length > 0) {
+            productDoc = byProductIdRes.data[0];
+            productDocId = String(productDoc._id || '');
+          } else {
+            const byDocIdRes = await productsCollection.doc(productId).get();
+            if (byDocIdRes.data.length > 0) {
+              productDoc = byDocIdRes.data[0];
+              productDocId = productId;
+            }
+          }
+          if (!productDoc || !productDocId) {
+            return { code: 404, msg: `Product not found: ${productId}` };
+          }
+          deductionPlans.push({
+            productDocId,
+            quantity
+          });
+        }
+
+        // We still log the decrement but don't block (Infinite stock mode)
+        for (const deduction of deductionPlans) {
+          try {
+            await productsCollection.doc(deduction.productDocId).update({
+              stock: db.command.inc(-deduction.quantity),
+              updated_at: Date.now()
+            });
+          } catch (e) {
+            // Silently fail if product doc update fails, as stock is infinite
+          }
+        }
+
+        // 2. Update Status to Shipped (1)
+        await ordersCollection.doc(orderId).update({
+          status: 1,
+          tracking_no: normalizedTrackingNo,
+          shipped_at: Date.now(),
+          updated_at: Date.now()
+        });
+        await writeSystemInteractionLog({
+          targetUserId: String(order.user_id || ''),
+          nutritionistId: String(userId || ''),
+          nutritionistName: getUserDisplayName(currentUser),
+          content: `顾问已发货，物流单号 ${normalizedTrackingNo}，请注意查收。`,
+          followUpStatus: '待回复'
+        });
+        const shipTriggerConfig = await getTriggerConfig(String(order?.nutritionist_id || userId || ''));
+        if (shipTriggerConfig.autoPush) {
+          await writeNotificationEvent({
+            targetUserId: String(order.user_id || ''),
+            nutritionistId: String(order?.nutritionist_id || userId || ''),
+            targetRole: 'client',
+            title: '订单已发货',
+            content: `您的补货订单已发货，物流单号 ${normalizedTrackingNo}。`,
+            category: 'order_shipped',
+            referenceType: 'order',
+            referenceId: String(orderId || ''),
+            metadata: { tracking_no: normalizedTrackingNo }
+          });
+        }
+        
+        return { code: 0, msg: 'Order shipped' };
+      }
+
+      case 'getClientDetail': {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const { clientId, fastFetch = false } = payload;
+        if (!clientId) {
+          return { code: 400, msg: 'Client ID required' };
+        }
+        
+        // Parallel Fetch
+        const [userRes, planRes, protocolRes, inventoryRes, logsRes, interactionsRes, legacyInteractionsRes] = await Promise.all([
+          usersCollection.doc(clientId).get(),
+          plansCollection.where({ user_id: clientId }).orderBy('date', 'desc').limit(30).get(),
+          protocolsCollection.where({ user_id: clientId, status: 'active' }).get(),
+          inventoryCollection.where({ user_id: clientId }).get(),
+          healthLogsCollection.where({ user_id: clientId }).orderBy('date', 'desc').limit(10).get(),
+          interactionLogsCollection.where({ user_id: clientId }).orderBy('created_at', 'desc').limit(50).get(),
+          interactionLogsCollection.where({ client_id: clientId }).orderBy('created_at', 'desc').limit(50).get()
+        ]);
+        
+        if (userRes.data.length === 0) {
+          return { code: 404, msg: 'Client not found' };
+        }
+        if (!isManagedClientByAdmin(userRes.data[0])) {
+          return { code: 403, msg: 'Permission denied' };
+        }
+
+        // Defer heavy tasks if fastFetch is true
+        if (!fastFetch) {
+          await purgeUntrustedActiveProtocols({ targetUserIds: [clientId], clearPlansWhenNoTrusted: false });
+          await reviewDueFollowUpActions(String(clientId || ''));
+        }
+
+        const interactionMap = new Map();
+        [...(interactionsRes.data || []), ...(legacyInteractionsRes.data || [])].forEach((item) => {
+          const key = item?._id ? String(item._id) : `${item?.created_at || 0}_${item?.content || ''}`;
+          if (!interactionMap.has(key)) interactionMap.set(key, item);
+        });
+        const interactions = Array.from(interactionMap.values())
+          .sort((a, b) => Number(b.created_at || 0) - Number(a.created_at || 0))
+          .slice(0, 30);
+
+        return {
+          code: 0,
+          data: {
+            user: userRes.data[0],
+            plans: planRes.data,
+            protocol: selectLatestProtocol((protocolRes.data || []).filter((protocol) => isTrustedProtocol(protocol))),
+            inventory: inventoryRes.data,
+            logs: logsRes.data,
+            interactions,
+            followUpActions: await getClientFollowUpActions(String(clientId || ''))
+          }
+        };
+      }
+
+      case 'processRefillRequest': {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const { requestId, status, note } = payload;
+        if (!requestId) {
+          return { code: 400, msg: 'Request ID required' };
+        }
+        if (!status || !['approved', 'rejected'].includes(status)) {
+          return { code: 400, msg: 'Invalid status' };
+        }
+        
+        // 1. Get Request
+        const reqRes = await refillRequestsCollection.doc(requestId).get();
+        if (reqRes.data.length === 0) {
+          return { code: 404, msg: 'Request not found' };
+        }
+        const request = reqRes.data[0];
+        const managed = await ensureManagedClient(request.user_id);
+        if (managed.error) return managed.error;
+        
+        // 2. Update Request Status
+        await refillRequestsCollection.doc(requestId).update({
+          status: status,
+          admin_note: note,
+          updated_at: Date.now()
+        });
+        
+        // 3. If Approved, Auto-create Order? 
+        // For now, we just mark it approved. The admin might manually create an order 
+        // or the system could auto-create a draft order. 
+        // Let's assume for this MVP, "Approved" just notifies the user or clears the list.
+        
+        return { code: 0, msg: 'Processed' };
+      }
+
+      case 'getClients': {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const clients = await fetchManagedClients({ orderBy: { field: 'created_at', order: 'desc' }, limit: 5000 });
+        const today = new Date().toISOString().split('T')[0];
+        const clientIds = clients.map(client => String(client._id));
+        await purgeUntrustedActiveProtocols({ targetUserIds: clientIds, clearPlansWhenNoTrusted: true });
+        const [todayPlans, activeProtocols, inventoryItems] = await Promise.all([
+          queryByUserIds(plansCollection, clientIds, { date: today }, { limit: 500 }),
+          queryByUserIds(protocolsCollection, clientIds, { status: 'active' }, { limit: 500, orderBy: { field: 'updated_at', order: 'desc' } }),
+          queryByUserIds(inventoryCollection, clientIds, {}, { limit: 1000 })
+        ]);
+        const todayPlanMap = new Map();
+        todayPlans.forEach((plan) => {
+          if (plan?.user_id && !todayPlanMap.has(String(plan.user_id))) {
+            todayPlanMap.set(String(plan.user_id), plan);
+          }
+        });
+        const protocolMap = new Map();
+        activeProtocols.forEach((protocol) => {
+          if (!isTrustedProtocol(protocol)) return;
+          if (protocol?.user_id && !protocolMap.has(String(protocol.user_id))) {
+            protocolMap.set(String(protocol.user_id), protocol);
+          }
+        });
+        const inventoryMap = new Map();
+        inventoryItems.forEach((inventory) => {
+          const key = String(inventory?.user_id || '');
+          if (!key) return;
+          if (!inventoryMap.has(key)) {
+            inventoryMap.set(key, []);
+          }
+          inventoryMap.get(key).push(inventory);
+        });
+        const enrichedClients = clients.map((client) => {
+          const key = String(client._id);
+          const todayPlan = todayPlanMap.get(key) || null;
+          const protocolItems = protocolMap.get(key)?.items || [];
+          const checkIn = getCheckInSummary(todayPlan);
+          const inventorySummary = getInventorySummary(inventoryMap.get(key) || [], protocolItems);
+          return {
+            ...client,
+            today_checkin: checkIn,
+            inventory_summary: inventorySummary
+          };
+        });
+        return { code: 0, data: enrichedClients };
+      }
+
+      case 'getClientsSyncMeta': {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const meta = await buildAdminSyncMeta();
+        return { code: 0, data: meta };
+      }
+
+      case 'calculateUserWROM': {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const { targetUserId } = payload;
+        if (!targetUserId) return { code: 400, msg: 'Target User ID required' };
+        
+        const totalWROM = await doCalculateWROM(targetUserId);
+        
+        return { code: 0, wrom: totalWROM };
+      }
+
+      // --- Client Actions ---
+      
+      case 'getDailyPlan': {
+        const { date } = payload;
+        await purgeUntrustedActiveProtocols({ targetUserIds: [userId], clearPlansWhenNoTrusted: true });
+        const res = await plansCollection
+          .where({ user_id: userId, date: date })
+          .get();
+        
+        if (res.data.length > 0) {
+          return { code: 0, data: res.data[0] };
+        }
+
+        // If no plan exists, try to generate from active protocol
+        const protocolRes = await protocolsCollection
+          .where({ user_id: userId, status: 'active' })
+          .get();
+        const protocol = selectLatestProtocol((protocolRes.data || []).filter((item) => isTrustedProtocol(item)));
+        if (protocol) {
+          const newTasks = protocol.items.map(item => ({
+            name: item.product_name,
+            product_id: item.product_id, // Important for inventory linking
+            dose: `${item.daily_usage} ${item.unit || '粒'}`, // Construct display dose
+            instruction: item.instruction,
+            completed: false
+          }));
+
+          const newPlan = {
+            user_id: userId,
+            date: date,
+            tasks: newTasks,
+            water_intake: 0,
+            symptoms: [],
+            updated_at: Date.now(),
+            created_at: Date.now()
+          };
+
+          const addRes = await plansCollection.add(newPlan);
+          return { code: 0, data: { ...newPlan, _id: addRes.id } };
+        }
+
+        return { code: 0, data: null };
+      }
+
+      case 'updateTaskStatus': {
+        const { date, taskIndex, completed } = payload;
+        const planRes = await plansCollection.where({ user_id: userId, date: date }).get();
+        
+        if (planRes.data.length > 0) {
+          const planId = planRes.data[0]._id;
+          const tasks = planRes.data[0].tasks;
+          if (tasks && tasks[taskIndex]) {
+            tasks[taskIndex].completed = completed;
+            await plansCollection.doc(planId).update({ tasks });
+            return { code: 0, msg: 'Updated' };
+          }
+          return { code: 400, msg: 'Task not found' };
+        } else {
+          return { code: 404, msg: 'Plan not found' };
+        }
+      }
+
+      case 'updateDailyPlanTasks': {
+        const { date, tasks } = payload;
+        const planRes = await plansCollection.where({ user_id: userId, date: date }).get();
+        let oldTasks = [];
+        let planId = null;
+        
+        if (planRes.data.length > 0) {
+          planId = planRes.data[0]._id;
+          oldTasks = planRes.data[0].tasks || [];
+        }
+
+        // --- Inventory Deduction & Points Logic ---
+        let completedCount = 0;
+        let pointsEarned = 0;
+
+        // Iterate through new tasks
+        for (let i = 0; i < tasks.length; i++) {
+          const newTask = tasks[i];
+          const oldTask = oldTasks[i];
+          
+          if (newTask.completed) completedCount++;
+
+          // Only proceed if status changed
+          if (oldTask && newTask.name === oldTask.name && newTask.completed !== oldTask.completed) {
+            const isCompleted = newTask.completed;
+            
+            // Points Calculation (10 pts per task)
+            if (isCompleted) pointsEarned += 10;
+            else pointsEarned -= 10;
+
+            // 1. Find Inventory Item
+            let invRes;
+            if (newTask.product_id) {
+              invRes = await inventoryCollection.where({
+                user_id: userId,
+                product_id: newTask.product_id
+              }).get();
+            }
+            
+            // Fallback to name match if not found by ID or ID missing
+            if (!invRes || invRes.data.length === 0) {
+              invRes = await inventoryCollection.where({
+                user_id: userId,
+                name: newTask.name 
+              }).get();
+            }
+            
+            if (invRes.data.length > 0) {
+              const invItem = invRes.data[0];
+              
+              // 2. Determine Dose Quantity
+              let doseQty = 1;
+              if (newTask.dose) {
+                const match = newTask.dose.match(/(\d+(\.\d+)?)/);
+                if (match) {
+                  doseQty = parseFloat(match[0]);
+                }
+              }
+              
+              // 3. Determine Capacity
+              const capacity = invItem.capacity || 30;
+              
+              // 4. Calculate Stock Change
+              const stockChange = capacity > 0 ? (doseQty / capacity) : 0;
+              
+              if (stockChange > 0) {
+                const oldStock = Number(invItem.stock || 0);
+                let newStock = oldStock;
+                if (isCompleted) {
+                  newStock -= stockChange;
+                  if (newStock < 0) newStock = 0; 
+                } else {
+                  newStock += stockChange;
+                }
+                
+                // 5. Update Inventory
+                await inventoryCollection.doc(invItem._id).update({
+                  stock: newStock,
+                  updated_at: Date.now()
+                });
+                await writeInventoryLog({
+                  inventoryId: invItem._id,
+                  productId: invItem.product_id || '',
+                  itemName: invItem.name || newTask.name || '',
+                  changeType: isCompleted ? 'task_consume' : 'task_revert',
+                  delta: newStock - oldStock,
+                  beforeStock: oldStock,
+                  afterStock: newStock,
+                  referenceType: 'daily_task',
+                  referenceId: planId || `${userId}_${date}`,
+                  remark: `${date} ${newTask.name || ''}`
+                });
+              }
+            }
+          }
+        }
+        // --- End Inventory Deduction ---
+
+        // Update User Points
+        if (pointsEarned !== 0) {
+          const userRes = await usersCollection.doc(userId).get();
+          if (userRes.data && userRes.data.length > 0) {
+            const user = userRes.data[0];
+            let newPoints = (user.points || 0) + pointsEarned;
+            if (newPoints < 0) newPoints = 0;
+            
+            // Streak Logic (Simplified: If all tasks completed, +1 streak day. 
+            // Real logic needs date checking, here we just increment on 100% completion trigger if not already incremented today)
+            // Ideally, streak is calculated by a daily job. Here we just update points.
+            
+            await usersCollection.doc(userId).update({
+              points: newPoints
+            });
+          }
+        }
+
+        if (planId) {
+          await plansCollection.doc(planId).update({ tasks, updated_at: Date.now() });
+        } else {
+           await plansCollection.add({
+            user_id: userId,
+            date: date,
+            tasks: tasks,
+            water_intake: 0,
+            symptoms: [],
+            updated_at: Date.now()
+          });
+        }
+
+        // --- Real-time WROM Update ---
+        // Trigger calculation after task update
+        await doCalculateWROM(userId);
+        
+        return { code: 0, msg: 'Updated tasks' };
+      }
+
+      case 'updateWaterIntake': {
+        const { date, waterIntake } = payload;
+        const planRes = await plansCollection.where({ user_id: userId, date: date }).get();
+        
+        if (planRes.data.length > 0) {
+          const planId = planRes.data[0]._id;
+          await plansCollection.doc(planId).update({ water_intake: waterIntake });
+        } else {
+          // Create new plan doc if not exists (though usually plan should exist)
+          // But for water log, we allow creating just for logging
+          await plansCollection.add({
+            user_id: userId,
+            date: date,
+            tasks: [], // Empty tasks if created by user log
+            water_intake: waterIntake,
+            symptoms: [],
+            updated_at: Date.now()
+          });
+        }
+        return { code: 0, msg: 'Updated water intake' };
+      }
+
+      case 'updateSymptoms': {
+        const { date, symptoms, symptomNotes } = payload;
+        const planRes = await plansCollection.where({ user_id: userId, date: date }).get();
+        
+        if (planRes.data.length > 0) {
+          const planId = planRes.data[0]._id;
+          await plansCollection.doc(planId).update({ 
+            symptoms: symptoms,
+            symptom_notes: symptomNotes,
+            updated_at: Date.now()
+          });
+        } else {
+          await plansCollection.add({
+            user_id: userId,
+            date: date,
+            tasks: [],
+            water_intake: 0,
+            symptoms: symptoms,
+            symptom_notes: symptomNotes,
+            updated_at: Date.now()
+          });
+        }
+        return { code: 0, msg: 'Updated symptoms' };
+      }
+
+      case 'getHealthMetrics': {
+        const { date } = payload;
+        const res = await healthLogsCollection
+          .where({ user_id: userId, date: date })
+          .get();
+        return { code: 0, data: res.data };
+      }
+
+      case 'updateHealthMetric': {
+        const { date, type, value, unit } = payload;
+        // Check if metric exists for this date and type
+        const res = await healthLogsCollection
+          .where({ user_id: userId, date: date, type: type })
+          .get();
+        
+        if (res.data.length > 0) {
+          const logId = res.data[0]._id;
+          await healthLogsCollection.doc(logId).update({ 
+            value: value,
+            updated_at: Date.now()
+          });
+        } else {
+          await healthLogsCollection.add({
+            user_id: userId,
+            date: date,
+            type: type,
+            value: value,
+            unit: unit,
+            created_at: Date.now()
+          });
+        }
+        return { code: 0, msg: 'Updated metric' };
+      }
+
+      case 'getHealthLogRange': {
+        const { type, startDate, endDate } = payload;
+        const cmd = db.command;
+        const res = await healthLogsCollection
+          .where({
+            user_id: userId,
+            type: type,
+            date: cmd.gte(startDate).and(cmd.lte(endDate))
+          })
+          .orderBy('date', 'asc')
+          .get();
+        return { code: 0, data: res.data };
+      }
+
+      case 'getWaterLogRange': {
+        const { startDate, endDate } = payload;
+        const cmd = db.command;
+        const res = await plansCollection
+          .where({
+            user_id: userId,
+            date: cmd.gte(startDate).and(cmd.lte(endDate))
+          })
+          .orderBy('date', 'asc')
+          .get();
+        
+        // Map to simplified structure
+        const data = res.data.map(p => ({
+          date: p.date,
+          value: p.water_intake || 0
+        }));
+        
+        return { code: 0, data };
+      }
+
+      case 'getInventory': {
+        const res = await inventoryCollection.where({ user_id: userId }).get();
+        const footprint = await hasInventoryFootprint(userId);
+        if (!footprint) {
+          return { code: 0, data: [] };
+        }
+        return { code: 0, data: res.data };
+      }
+
+      case 'getProducts': {
+        // Clients can fetch all products from the main library
+        const res = await productsCollection.orderBy('category', 'asc').limit(100).get();
+        return { code: 0, data: res.data };
+      }
+
+      case 'getInventoryHistory': {
+        const { inventoryId, limit = 50 } = payload;
+        const size = Math.max(1, Math.min(Number(limit) || 50, 200));
+        const query = { user_id: userId };
+        if (inventoryId) {
+          query.inventory_id = inventoryId;
+        }
+        const res = await inventoryLogsCollection
+          .where(query)
+          .orderBy('created_at', 'desc')
+          .limit(size)
+          .get();
+        return { code: 0, data: res.data };
+      }
+
+      case 'cleanupInitialInventoryGhost': {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const { targetUserId } = payload;
+        if (!targetUserId) {
+          return { code: 400, msg: 'Target user required' };
+        }
+        const footprint = await hasInventoryFootprint(targetUserId);
+        if (footprint) {
+          return { code: 400, msg: 'User has inventory footprint, cleanup blocked' };
+        }
+        const invRes = await inventoryCollection.where({ user_id: targetUserId }).get();
+        if (invRes.data.length === 0) {
+          return { code: 0, msg: 'No inventory to clean', cleaned: 0 };
+        }
+        for (const invItem of invRes.data) {
+          await inventoryCollection.doc(invItem._id).remove();
+        }
+        return { code: 0, msg: 'Cleanup done', cleaned: invRes.data.length };
+      }
+      
+      case 'updateInventory': {
+         const { itemId, stock } = payload;
+         const itemRes = await inventoryCollection.doc(itemId).get();
+         if (itemRes.data.length === 0) {
+           return { code: 404, msg: 'Inventory item not found' };
+         }
+         const item = itemRes.data[0];
+         if (item.user_id !== userId && currentUser.role !== 'admin') {
+           return { code: 403, msg: 'Permission denied' };
+         }
+         const oldStock = Number(item.stock || 0);
+         const newStock = Number(stock || 0);
+         await inventoryCollection.doc(itemId).update({ stock: newStock, updated_at: Date.now() });
+         await writeInventoryLog({
+           targetUserId: item.user_id,
+           inventoryId: itemId,
+           productId: item.product_id || '',
+           itemName: item.name || '',
+           changeType: 'manual_adjust',
+           delta: newStock - oldStock,
+           beforeStock: oldStock,
+           afterStock: newStock,
+           referenceType: 'inventory',
+           referenceId: itemId,
+           remark: '手动调整库存'
+         });
+         return { code: 0, msg: 'Updated' };
+      }
+
+      case 'requestRefill': {
+        const { itemId, itemName } = payload;
+        if (!itemId) {
+          return { code: 400, msg: 'Item ID required' };
+        }
+        const inventoryRes = await inventoryCollection.doc(itemId).get();
+        if (inventoryRes.data.length === 0) {
+          return { code: 404, msg: 'Inventory item not found' };
+        }
+        const inventoryItem = inventoryRes.data[0];
+        if (inventoryItem.user_id !== userId) {
+          return { code: 403, msg: 'Permission denied' };
+        }
+        await purgeUntrustedActiveProtocols({ targetUserIds: [userId], clearPlansWhenNoTrusted: false });
+        const protocolRes = await protocolsCollection
+          .where({ user_id: userId, status: 'active' })
+          .get();
+        const protocol = selectLatestProtocol((protocolRes.data || []).filter((item) => isTrustedProtocol(item)));
+        const protocolItems = protocol?.items || [];
+        const inProtocol = protocolItems.some((protocolItem) => {
+          if (inventoryItem.product_id && protocolItem.product_id) {
+            return String(inventoryItem.product_id) === String(protocolItem.product_id);
+          }
+          if (inventoryItem.name && protocolItem.product_name) {
+            return String(inventoryItem.name).trim().toLowerCase() === String(protocolItem.product_name).trim().toLowerCase();
+          }
+          return false;
+        });
+        if (!inProtocol) {
+          return { code: 400, msg: '该产品未纳入健康计划，暂不支持补货' };
+        }
+        const threshold = Number(inventoryItem.low_stock_threshold ?? 1);
+        const stock = Number(inventoryItem.stock ?? 0);
+        if (stock > threshold) {
+          return { code: 400, msg: '库存充足，暂不需要补货' };
+        }
+        // Check if pending request exists
+        const pending = await refillRequestsCollection
+          .where({ user_id: userId, item_id: itemId, status: 'pending' })
+          .get();
+        
+        if (pending.data.length > 0) {
+          return { code: 400, msg: 'Refill request already pending' };
+        }
+        
+        await refillRequestsCollection.add({
+          user_id: userId,
+          item_id: itemId,
+          item_name: itemName,
+          status: 'pending',
+          created_at: Date.now()
+        });
+        return { code: 0, msg: 'Request sent' };
+      }
+
+      case 'getRefillRequests': {
+        const res = await refillRequestsCollection
+          .where({ user_id: userId })
+          .orderBy('created_at', 'desc')
+          .get();
+        return { code: 0, data: res.data };
+      }
+
+      // --- Order System (Flow A) ---
+
+      case 'getOrders': {
+        const cmd = db.command;
+        // Fetch active orders (Pending: 0, Shipped: 1) and recent Completed (2)
+        // For simplicity, just fetch all and frontend filters or backend limits
+        const res = await ordersCollection
+          .where({ 
+            user_id: userId,
+            status: cmd.in([0, 1, 2, -1])
+          })
+          .orderBy('created_at', 'desc')
+          .limit(20)
+          .get();
+        return { code: 0, data: res.data };
+      }
+
+      case 'cancelOrder': {
+        const { orderId } = payload;
+        if (!orderId) {
+          return { code: 400, msg: 'Order ID required' };
+        }
+        const orderRes = await ordersCollection.doc(orderId).get();
+        if (orderRes.data.length === 0) {
+          return { code: 404, msg: 'Order not found' };
+        }
+        const order = orderRes.data[0];
+        if (String(order.user_id || '') !== String(userId)) {
+          return { code: 403, msg: 'Permission denied' };
+        }
+        if (Number(order.status) !== 0) {
+          return { code: 400, msg: 'Only pending orders can be cancelled' };
+        }
+        await ordersCollection.doc(orderId).update({
+          status: -1,
+          cancelled_at: Date.now(),
+          updated_at: Date.now()
+        });
+        const nutritionistId = String(order.nutritionist_id || currentUser.nutritionist_id || '');
+        if (nutritionistId) {
+          const nutritionistRes = await usersCollection.doc(nutritionistId).field({ username: true, nickname: true, phone: true }).get();
+          await writeSystemInteractionLog({
+            targetUserId: String(userId || ''),
+            nutritionistId,
+            nutritionistName: getUserDisplayName(nutritionistRes?.data?.[0] || {}),
+            content: '客户已取消补货订单。',
+            followUpStatus: '未处理'
+          });
+          const cancelTriggerConfig = await getTriggerConfig(nutritionistId);
+          if (cancelTriggerConfig.notifyAdmin) {
+            await writeNotificationEvent({
+              targetUserId: nutritionistId,
+              nutritionistId,
+              targetRole: 'admin',
+              title: '客户取消订单',
+              content: `客户已取消补货订单，订单号 ${String(orderId || '').slice(-6).toUpperCase()}。`,
+              category: 'order_cancelled',
+              referenceType: 'order',
+              referenceId: String(orderId || ''),
+              metadata: { client_id: String(order.user_id || '') }
+            });
+          }
+        }
+        return { code: 0, msg: 'Order cancelled' };
+      }
+
+      case 'createRefillOrder': {
+        const { items, debugAutoShip } = payload; // items: [{ inventory_id, quantity, name, unit, icon }]
+        
+        if (!items || items.length === 0) {
+          return { code: 400, msg: 'No items' };
+        }
+        await purgeUntrustedActiveProtocols({ targetUserIds: [userId], clearPlansWhenNoTrusted: false });
+        const protocolRes = await protocolsCollection
+          .where({ user_id: userId, status: 'active' })
+          .get();
+        const protocol = selectLatestProtocol((protocolRes.data || []).filter((item) => isTrustedProtocol(item)));
+        const protocolItems = protocol?.items || [];
+
+        // Enrich items with product_id from inventory or catalog
+        const enrichedItems = [];
+        for (const item of items) {
+          if (item.inventory_id) {
+            const invRes = await inventoryCollection.doc(item.inventory_id).get();
+            if (invRes.data.length > 0) {
+              const invItem = invRes.data[0];
+              if (invItem.user_id !== userId) {
+                return { code: 403, msg: 'Permission denied' };
+              }
+              enrichedItems.push({
+                ...item,
+                product_id: invItem.product_id || item.product_id // Prefer inventory product_id
+              });
+              
+              // If Debug Auto Ship, deduct immediately (Infinite stock mode - still decrement for logging)
+              if (debugAutoShip && (invItem.product_id || item.product_id)) {
+                try {
+                  await productsCollection.doc(invItem.product_id || item.product_id).update({
+                    stock: db.command.inc(-item.quantity)
+                  });
+                } catch (e) {
+                  console.error(`Failed to deduct stock for ${invItem.product_id || item.product_id}`, e);
+                }
+              }
+            } else {
+              enrichedItems.push(item);
+            }
+          } else if (item.product_id) {
+            // Product from catalog
+            enrichedItems.push(item);
+            if (debugAutoShip) {
+              try {
+                await productsCollection.doc(item.product_id).update({
+                  stock: db.command.inc(-item.quantity)
+                });
+              } catch (e) {
+                console.error(`Failed to deduct stock for ${item.product_id}`, e);
+              }
+            }
+          } else {
+            enrichedItems.push(item);
+          }
+        }
+
+        const assignedNutritionistId = currentUser.role === 'admin'
+          ? userId
+          : (currentUser.nutritionist_id || '');
+        if (!assignedNutritionistId) {
+          return { code: 400, msg: 'Nutritionist not assigned' };
+        }
+
+        const orderData = {
+          user_id: userId,
+          nutritionist_id: assignedNutritionistId,
+          items: enrichedItems,
+          status: debugAutoShip ? 1 : 0, // 0: Pending Shipment, 1: Shipped (Debug)
+          tracking_no: debugAutoShip ? 'SF1234567890' : '',
+          created_at: Date.now(),
+          updated_at: Date.now()
+        };
+
+        const res = await ordersCollection.add(orderData);
+        const nutritionistProfileRes = await usersCollection.doc(assignedNutritionistId).field({ username: true, nickname: true, phone: true }).get();
+        await writeSystemInteractionLog({
+          targetUserId: String(userId || ''),
+          nutritionistId: String(assignedNutritionistId || ''),
+          nutritionistName: getUserDisplayName(nutritionistProfileRes?.data?.[0] || {}),
+          content: `客户发起补货订单，待发货。订单号 ${String(res.id || '').slice(-6).toUpperCase()}`,
+          followUpStatus: '跟进中'
+        });
+        const createOrderTriggerConfig = await getTriggerConfig(String(assignedNutritionistId || ''));
+        if (createOrderTriggerConfig.notifyAdmin) {
+          await writeNotificationEvent({
+            targetUserId: String(assignedNutritionistId || ''),
+            nutritionistId: String(assignedNutritionistId || ''),
+            targetRole: 'admin',
+            title: '新增待发货订单',
+            content: `客户发起补货订单，订单号 ${String(res.id || '').slice(-6).toUpperCase()}。`,
+            category: 'order_created',
+            referenceType: 'order',
+            referenceId: String(res.id || ''),
+            metadata: { client_id: String(userId || '') }
+          });
+        }
+        return { code: 0, msg: 'Order created', orderId: res.id };
+      }
+
+      case 'updateOrderLogistics': {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const { orderId, trackingNo, deliveryPhoto } = payload;
+        const normalizedTrackingNo = String(trackingNo || '').trim();
+        const normalizedDeliveryPhoto = String(deliveryPhoto || '').trim();
+        if (!orderId) {
+          return { code: 400, msg: 'Order ID required' };
+        }
+        if (!normalizedTrackingNo) {
+          return { code: 400, msg: 'Tracking number required' };
+        }
+        const orderRes = await ordersCollection.doc(orderId).get();
+        if (orderRes.data.length === 0) {
+          return { code: 404, msg: 'Order not found' };
+        }
+        const order = orderRes.data[0];
+        if (Number(order.status) !== 1) {
+          return { code: 400, msg: 'Only shipped orders can update logistics' };
+        }
+        if (order?.nutritionist_id && String(order.nutritionist_id) !== String(userId)) {
+          return { code: 403, msg: 'Permission denied' };
+        }
+        if (!order?.nutritionist_id && order?.user_id) {
+          const orderUserRes = await usersCollection.doc(order.user_id).field({ nutritionist_id: true }).get();
+          const ownerNutritionistId = orderUserRes.data[0]?.nutritionist_id || '';
+          if (ownerNutritionistId && String(ownerNutritionistId) !== String(userId)) {
+            return { code: 403, msg: 'Permission denied' };
+          }
+        }
+        const updates = {
+          tracking_no: normalizedTrackingNo,
+          updated_at: Date.now()
+        };
+        if (normalizedDeliveryPhoto) {
+          updates.delivery_photo = normalizedDeliveryPhoto;
+        }
+        await ordersCollection.doc(orderId).update(updates);
+        return { code: 0, msg: 'Logistics updated' };
+      }
+
+      case 'createDirectShipOrder': {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const { clientId, productId, quantity, trackingNo, deliveryPhoto } = payload;
+        const normalizedClientId = String(clientId || '').trim();
+        const normalizedProductId = String(productId || '').trim();
+        const normalizedTrackingNo = String(trackingNo || '').trim();
+        const normalizedDeliveryPhoto = String(deliveryPhoto || '').trim();
+        const shipQuantity = Number(quantity || 0);
+        if (!normalizedClientId) return { code: 400, msg: 'Client ID required' };
+        if (!normalizedProductId) return { code: 400, msg: 'Product ID required' };
+        if (!normalizedTrackingNo) return { code: 400, msg: 'Tracking number required' };
+        if (!Number.isFinite(shipQuantity) || shipQuantity <= 0) {
+          return { code: 400, msg: 'Invalid quantity' };
+        }
+        const managed = await ensureManagedClient(normalizedClientId);
+        if (managed.error) return managed.error;
+        let productDoc = null;
+        let productDocId = '';
+        const byProductIdRes = await productsCollection.where({ product_id: normalizedProductId }).limit(1).get();
+        if (byProductIdRes.data.length > 0) {
+          productDoc = byProductIdRes.data[0];
+          productDocId = String(productDoc._id || '');
+        } else {
+          const byDocIdRes = await productsCollection.doc(normalizedProductId).get();
+          if (byDocIdRes.data.length > 0) {
+            productDoc = byDocIdRes.data[0];
+            productDocId = normalizedProductId;
+          }
+        }
+        if (!productDoc || !productDocId) {
+          return { code: 404, msg: 'Product not found' };
+        }
+        
+        // Decrement for logging (Infinite stock mode)
+        try {
+          await productsCollection.doc(productDocId).update({
+            stock: db.command.inc(-shipQuantity),
+            updated_at: Date.now()
+          });
+        } catch (e) {
+          // Silently fail
+        }
+        const orderData = {
+          user_id: normalizedClientId,
+          nutritionist_id: userId,
+          items: [{
+            product_id: productDoc.product_id || productDocId,
+            quantity: shipQuantity,
+            name: productDoc.name || '补货产品',
+            unit: productDoc.unit || '瓶',
+            icon: productDoc.icon || '📦'
+          }],
+          status: 1,
+          tracking_no: normalizedTrackingNo,
+          delivery_photo: normalizedDeliveryPhoto,
+          created_by: 'dietitian',
+          shipped_at: Date.now(),
+          created_at: Date.now(),
+          updated_at: Date.now()
+        };
+        const createRes = await ordersCollection.add(orderData);
+        await writeSystemInteractionLog({
+          targetUserId: normalizedClientId,
+          nutritionistId: String(userId || ''),
+          nutritionistName: getUserDisplayName(currentUser),
+          content: `顾问主动发货，物流单号 ${normalizedTrackingNo}，请注意查收。`,
+          followUpStatus: '待回复'
+        });
+        const directShipTriggerConfig = await getTriggerConfig(String(userId || ''));
+        if (directShipTriggerConfig.autoPush) {
+          await writeNotificationEvent({
+            targetUserId: normalizedClientId,
+            nutritionistId: String(userId || ''),
+            targetRole: 'client',
+            title: '顾问已主动发货',
+            content: `顾问已为您安排发货，物流单号 ${normalizedTrackingNo}。`,
+            category: 'order_direct_shipped',
+            referenceType: 'order',
+            referenceId: String(createRes.id || ''),
+            metadata: { tracking_no: normalizedTrackingNo }
+          });
+        }
+        return { code: 0, msg: 'Direct shipment created', orderId: createRes.id };
+      }
+
+      case 'confirmOrderReceipt': {
+        const { orderId } = payload;
+        
+        const orderRes = await ordersCollection.doc(orderId).get();
+        if (orderRes.data.length === 0) {
+          return { code: 404, msg: 'Order not found' };
+        }
+        
+        const order = orderRes.data[0];
+        if (order.user_id !== userId) {
+          return { code: 403, msg: 'Permission denied' };
+        }
+        
+        if (order.status !== 1) { // Must be 'Shipped' status to confirm
+           // Allow confirming if status is 0 (Self-pickup/Instant?) - Stick to spec: Flow A/B -> Shipped -> Confirmed
+           // But for testing/demo, maybe allow 0 too? No, let's stick to logic.
+           // However, if there is no "Shipped" step in MVP, we might need to allow 0 -> 2 directly?
+           // Let's assume there is an admin step to Ship. 
+           // IF we want to test "Confirm Receipt" immediately, we need a way to move to status 1.
+           // For MVP self-service, let's allow 0 -> 2 if we want "Instant Refill"?
+           // Spec says: "Confirm Receipt" is for "Received physical goods".
+           // So status should be 1.
+           return { code: 400, msg: 'Order not shipped yet' };
+        }
+
+        // 1. Update Order Status
+        await ordersCollection.doc(orderId).update({
+          status: 2, // Completed
+          received_at: Date.now(),
+          updated_at: Date.now()
+        });
+
+        // 2. Update Inventory
+        for (const item of (Array.isArray(order.items) ? order.items : [])) {
+          const quantity = Number(item?.quantity || 0);
+          if (!Number.isFinite(quantity) || quantity <= 0) continue;
+
+          let targetInventory = null;
+          let targetInventoryId = '';
+
+          const inventoryId = String(item?.inventory_id || '').trim();
+          if (inventoryId) {
+            const invRes = await inventoryCollection.doc(inventoryId).get();
+            if (invRes.data.length > 0) {
+              targetInventory = invRes.data[0];
+              targetInventoryId = String(targetInventory._id || inventoryId);
+              if (String(targetInventory.user_id || '') !== String(userId)) {
+                return { code: 403, msg: 'Permission denied' };
+              }
+            }
+          }
+
+          const productId = String(item?.product_id || '').trim();
+          if (!targetInventory && productId) {
+            const invByProductRes = await inventoryCollection
+              .where({ user_id: userId, product_id: productId })
+              .limit(1)
+              .get();
+            if (invByProductRes.data.length > 0) {
+              targetInventory = invByProductRes.data[0];
+              targetInventoryId = String(targetInventory._id || '');
+            }
+          }
+
+          if (!targetInventory && String(item?.name || '').trim()) {
+            const invByNameRes = await inventoryCollection
+              .where({ user_id: userId, name: String(item.name).trim() })
+              .limit(1)
+              .get();
+            if (invByNameRes.data.length > 0) {
+              targetInventory = invByNameRes.data[0];
+              targetInventoryId = String(targetInventory._id || '');
+            }
+          }
+
+          if (targetInventory && targetInventoryId) {
+            const currentStock = Number(targetInventory.stock || 0);
+            const newStock = currentStock + quantity;
+            await inventoryCollection.doc(targetInventoryId).update({
+              stock: newStock,
+              updated_at: Date.now()
+            });
+            await writeInventoryLog({
+              inventoryId: targetInventoryId,
+              productId: targetInventory.product_id || productId,
+              itemName: targetInventory.name || item.name || '',
+              changeType: 'order_receipt',
+              delta: newStock - currentStock,
+              beforeStock: currentStock,
+              afterStock: newStock,
+              referenceType: 'order',
+              referenceId: orderId,
+              remark: `确认收货 +${quantity}`
+            });
+            continue;
+          }
+
+          let productSnapshot = null;
+          if (productId) {
+            const byProductIdRes = await productsCollection.where({ product_id: productId }).limit(1).get();
+            if (byProductIdRes.data.length > 0) {
+              productSnapshot = byProductIdRes.data[0];
+            } else {
+              const byDocIdRes = await productsCollection.doc(productId).get();
+              if (byDocIdRes.data.length > 0) {
+                productSnapshot = byDocIdRes.data[0];
+              }
+            }
+          }
+
+          const createdRes = await inventoryCollection.add({
+            user_id: userId,
+            product_id: productId || String(productSnapshot?.product_id || ''),
+            name: String(item?.name || productSnapshot?.name || '补货产品'),
+            stock: quantity,
+            unit: String(item?.unit || productSnapshot?.unit || '瓶'),
+            icon: String(item?.icon || productSnapshot?.icon || '📦'),
+            capacity: Number(productSnapshot?.capacity || 0),
+            sub_unit: String(productSnapshot?.sub_unit || '粒'),
+            daily_usage: Number(productSnapshot?.daily_usage || 0),
+            low_stock_threshold: 1,
+            updated_at: Date.now(),
+            created_at: Date.now()
+          });
+          await writeInventoryLog({
+            inventoryId: String(createdRes.id || ''),
+            productId: productId || String(productSnapshot?.product_id || ''),
+            itemName: String(item?.name || productSnapshot?.name || '补货产品'),
+            changeType: 'order_receipt',
+            delta: quantity,
+            beforeStock: 0,
+            afterStock: quantity,
+            referenceType: 'order',
+            referenceId: orderId,
+            remark: `确认收货 +${quantity}`
+          });
+        }
+        const receiptTriggerConfig = await getTriggerConfig(String(order?.nutritionist_id || currentUser?.nutritionist_id || ''));
+        if (receiptTriggerConfig.notifyAdmin && order?.nutritionist_id) {
+          await writeNotificationEvent({
+            targetUserId: String(order.nutritionist_id),
+            nutritionistId: String(order.nutritionist_id),
+            targetRole: 'admin',
+            title: '客户已确认收货',
+            content: `订单 ${String(orderId || '').slice(-6).toUpperCase()} 已确认收货。`,
+            category: 'order_received',
+            referenceType: 'order',
+            referenceId: String(orderId || ''),
+            metadata: { client_id: String(userId || '') }
+          });
+        }
+
+        return { code: 0, msg: 'Receipt confirmed' };
+      }
+
+      case 'calculateDailyWROM': {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        // This should be triggered by a daily cron job
+        const { targetUserId } = payload; // Optional: Calculate for specific user
+        
+        const managedClients = await fetchManagedClients({ limit: 5000 });
+        const clients = targetUserId
+          ? managedClients.filter((client) => String(client._id) === String(targetUserId))
+          : managedClients;
+        const results = [];
+        
+        for (const client of clients) {
+          try {
+             const result = await doCalculateWROM(client._id);
+             if (result) results.push(result);
+          } catch (err) {
+            console.error(`Error calculating WROM for ${client._id}:`, err);
+          }
+        }
+        
+        return { code: 0, msg: 'WROM & RPS calculation complete', results };
+      }
+
+      // --- Admin Actions ---
+
+      case 'getClientPendingRefills': {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const { clientId } = payload;
+        const managed = await ensureManagedClient(clientId);
+        if (managed.error) return managed.error;
+        const res = await refillRequestsCollection
+          .where({ user_id: clientId, status: 'pending' })
+          .orderBy('created_at', 'desc')
+          .get();
+        return { code: 0, data: res.data };
+      }
+
+      case 'getAdminDashboardData': {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const triggerConfig = await getTriggerConfig(String(userId || ''));
+        const now = Date.now();
+        const fourteenDaysAgo = now - (14 * 24 * 60 * 60 * 1000);
+        const today = new Date().toISOString().split('T')[0];
+        const allClients = await fetchManagedClients({
+          field: { _id: true, username: true, nickname: true, phone: true, avatar: true, wrom_score: true, wrom_trend: true, wrom_reason: true, rps_score: true, rps_trend: true },
+          limit: 5000
+        });
+        const clientIds = allClients.map(client => String(client._id));
+        const [recentCheckIns, todayPlans, activeProtocols, inventories, orderRows] = await Promise.all([
+          plansCollection
+            .where({ date: today })
+            .orderBy('updated_at', 'desc')
+            .limit(5)
+            .get(),
+          queryByUserIds(plansCollection, clientIds, { date: today }, { limit: 500 }),
+          queryByUserIds(protocolsCollection, clientIds, { status: 'active' }, { limit: 500, orderBy: { field: 'updated_at', order: 'desc' } }),
+          queryByUserIds(inventoryCollection, clientIds, {}, { limit: 2000 }),
+          queryByUserIds(ordersCollection, clientIds, { status: cmd.in([0, 1]) }, { limit: 2000, orderBy: { field: 'created_at', order: 'desc' } })
+        ]);
+        const lowScoreClients = allClients
+          .filter((client) => Number(client?.wrom_score || 0) < Number(triggerConfig.wromThreshold || 60))
+          .sort((a, b) => Number(a?.wrom_score || 0) - Number(b?.wrom_score || 0))
+          .slice(0, 5);
+        const lowRpsClients = allClients
+          .filter((client) => {
+            const score = Number(client?.rps_score);
+            const normalized = Number.isFinite(score) ? score : 70;
+            return normalized < 60;
+          })
+          .sort((a, b) => {
+            const scoreA = Number(a?.rps_score);
+            const scoreB = Number(b?.rps_score);
+            const normalizedA = Number.isFinite(scoreA) ? scoreA : 70;
+            const normalizedB = Number.isFinite(scoreB) ? scoreB : 70;
+            return normalizedA - normalizedB;
+          })
+          .slice(0, 5);
+        const reviewedRegressionRes = await followUpActionsCollection.where({
+          nutritionist_id: String(userId || ''),
+          status: 'reviewed',
+          reviewed_at: cmd.gte(fourteenDaysAgo),
+          delta_rps: cmd.lt(0)
+        }).orderBy('reviewed_at', 'desc').limit(20).get();
+        const regressionByClient = new Map();
+        (reviewedRegressionRes.data || []).forEach((item) => {
+          const key = String(item?.user_id || '');
+          if (!key) return;
+          if (!regressionByClient.has(key)) regressionByClient.set(key, item);
+        });
+        const reviewRegressionClients = Array.from(regressionByClient.keys()).map((clientId) => {
+          const client = allClients.find((row) => String(row?._id || '') === clientId) || {};
+          const action = regressionByClient.get(clientId) || {};
+          return {
+            ...client,
+            alert_reason: 'followup_review_regression',
+            delta_rps: Number(action?.delta_rps || 0),
+            reviewed_at: Number(action?.reviewed_at || 0),
+            regression_level: String(action?.regression_level || '')
+          };
+        }).sort((a, b) => {
+          const levelRank = (level) => (level === 'high' ? 3 : (level === 'medium' ? 2 : (level === 'low' ? 1 : 0)));
+          const byLevel = levelRank(String(b?.regression_level || '')) - levelRank(String(a?.regression_level || ''));
+          if (byLevel !== 0) return byLevel;
+          return Number(a?.delta_rps || 0) - Number(b?.delta_rps || 0);
+        });
+        const repurchaseAttentionMap = new Map();
+        lowRpsClients.forEach((client) => {
+          repurchaseAttentionMap.set(String(client?._id || ''), {
+            ...client,
+            alert_reason: 'rps_low_score'
+          });
+        });
+        reviewRegressionClients.forEach((client) => {
+          const key = String(client?._id || '');
+          if (!key) return;
+          if (!repurchaseAttentionMap.has(key)) {
+            repurchaseAttentionMap.set(key, client);
+          }
+        });
+        const repurchaseAttention = Array.from(repurchaseAttentionMap.values())
+          .sort((a, b) => {
+            const isRegressionA = String(a?.alert_reason || '') === 'followup_review_regression';
+            const isRegressionB = String(b?.alert_reason || '') === 'followup_review_regression';
+            if (isRegressionA !== isRegressionB) return isRegressionA ? -1 : 1;
+            if (isRegressionA && isRegressionB) {
+              const levelRank = (level) => (level === 'high' ? 3 : (level === 'medium' ? 2 : (level === 'low' ? 1 : 0)));
+              const byLevel = levelRank(String(b?.regression_level || '')) - levelRank(String(a?.regression_level || ''));
+              if (byLevel !== 0) return byLevel;
+              return Number(a?.delta_rps || 0) - Number(b?.delta_rps || 0);
+            }
+            const scoreA = Number(a?.rps_score);
+            const scoreB = Number(b?.rps_score);
+            const normalizedA = Number.isFinite(scoreA) ? scoreA : 70;
+            const normalizedB = Number.isFinite(scoreB) ? scoreB : 70;
+            return normalizedA - normalizedB;
+          })
+          .slice(0, 10);
+        const clientMap = new Map();
+        allClients.forEach((client) => {
+          clientMap.set(String(client._id), client);
+        });
+        const planMap = new Map();
+        todayPlans.forEach((plan) => {
+          if (plan?.user_id && !planMap.has(String(plan.user_id))) {
+            planMap.set(String(plan.user_id), plan);
+          }
+        });
+        const protocolMap = new Map();
+        activeProtocols.forEach((protocol) => {
+          if (!isTrustedProtocol(protocol)) return;
+          if (protocol?.user_id && !protocolMap.has(String(protocol.user_id))) {
+            protocolMap.set(String(protocol.user_id), protocol);
+          }
+        });
+        const inventoryMap = new Map();
+        inventories.forEach((inventory) => {
+          const key = String(inventory?.user_id || '');
+          if (!key) return;
+          if (!inventoryMap.has(key)) {
+            inventoryMap.set(key, []);
+          }
+          inventoryMap.get(key).push(inventory);
+        });
+
+        const lowInventoryAlerts = [];
+        const pendingCheckIns = [];
+        for (const client of allClients) {
+          const clientId = String(client._id);
+          const todayPlan = planMap.get(clientId) || null;
+          const checkInSummary = getCheckInSummary(todayPlan);
+          if (checkInSummary.status !== 'completed') {
+            pendingCheckIns.push({
+              _id: clientId,
+              username: client.username || client.nickname || (client.phone ? `用户${String(client.phone).slice(-4)}` : '客户'),
+              avatar: client.avatar || '',
+              today_checkin: checkInSummary
+            });
+          }
+          const hasExecutablePlan = Array.isArray(todayPlan?.tasks) && todayPlan.tasks.length > 0;
+          if (!hasExecutablePlan) {
+            continue;
+          }
+          const protocolItems = protocolMap.get(clientId)?.items || [];
+          const summary = getInventorySummary(inventoryMap.get(clientId) || [], protocolItems, {
+            lowStockDays: Number(triggerConfig.inventoryDaysRemaining || 5)
+          });
+          summary.low_items.forEach((lowItem) => {
+            lowInventoryAlerts.push({
+              _id: `${clientId}_${lowItem.item_id}`,
+              user_id: clientId,
+              username: client.username || client.nickname || (client.phone ? `用户${String(client.phone).slice(-4)}` : '客户'),
+              avatar: client.avatar || '',
+              item_id: lowItem.item_id,
+              item_name: lowItem.item_name || '待补货产品',
+              created_at: Date.now()
+            });
+          });
+        }
+        const enrichedRefills = lowInventoryAlerts.slice(0, 5);
+        const pendingCheckInList = pendingCheckIns
+          .sort((a, b) => {
+            const aScore = a.today_checkin?.completion_rate ?? 0;
+            const bScore = b.today_checkin?.completion_rate ?? 0;
+            return aScore - bScore;
+          })
+          .slice(0, 20);
+
+        const checkInUsers = (recentCheckIns.data || []).map((plan) => {
+          const user = clientMap.get(String(plan.user_id)) || {};
+          return {
+            ...user,
+            plan_status: (Array.isArray(plan.tasks) && plan.tasks.every(t => t.completed)) ? 'Completed' : 'In Progress'
+          };
+        });
+        const enrichedOrders = (orderRows || []).map((order) => {
+          const user = clientMap.get(String(order?.user_id || '')) || {};
+          const firstItem = Array.isArray(order?.items) ? order.items[0] : null;
+          return {
+            ...order,
+            username: user?.username || user?.nickname || (user?.phone ? `用户${String(user.phone).slice(-4)}` : '客户'),
+            avatar: user?.avatar || '',
+            item_name: firstItem?.name || order?.item_name || '待补货产品'
+          };
+        });
+        const pendingOrders = enrichedOrders.filter((order) => Number(order?.status) === 0).slice(0, 50);
+        const shippedOrders = enrichedOrders.filter((order) => Number(order?.status) === 1).slice(0, 50);
+
+        return {
+          code: 0,
+          data: {
+            attention: lowScoreClients,
+            repurchaseAttention,
+            reviewRegression: reviewRegressionClients.slice(0, 10),
+            refills: enrichedRefills,
+            pendingOrders,
+            shippedOrders,
+            checkIns: checkInUsers,
+            missedCheckIns: pendingCheckInList,
+            summary: {
+              missedCheckIns: pendingCheckIns.length,
+              lowInventory: lowInventoryAlerts.length,
+              lowScore: lowScoreClients.length,
+              lowRps: lowRpsClients.length,
+              reviewRegression: reviewRegressionClients.length
+            }
+          }
+        };
+      }
+
+      case 'getAdminDashboardSyncMeta': {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const meta = await buildAdminSyncMeta();
+        return { code: 0, data: meta };
+      }
+
+      case 'getAdminNotifications': {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const limit = Math.max(1, Math.min(100, Number(payload?.limit || 20)));
+        const res = await notificationsCollection
+          .where({
+            target_role: 'admin',
+            target_user_id: String(userId || '')
+          })
+          .orderBy('created_at', 'desc')
+          .limit(limit)
+          .get();
+        return { code: 0, data: res.data || [] };
+      }
+
+      case 'getMyNotifications': {
+        const limit = Math.max(1, Math.min(100, Number(payload?.limit || 20)));
+        const res = await notificationsCollection
+          .where({
+            target_user_id: String(userId || '')
+          })
+          .orderBy('created_at', 'desc')
+          .limit(limit)
+          .get();
+        return { code: 0, data: res.data || [] };
+      }
+
+      case 'markNotificationRead': {
+        const { notificationId } = payload;
+        if (!notificationId) return { code: 400, msg: 'Notification ID required' };
+        const currentRes = await notificationsCollection.doc(notificationId).get();
+        if (!currentRes.data.length) return { code: 404, msg: 'Notification not found' };
+        const notification = currentRes.data[0];
+        if (String(notification.target_user_id || '') !== String(userId || '') && String(notification.nutritionist_id || '') !== String(userId || '')) {
+          return { code: 403, msg: 'Permission denied' };
+        }
+        await notificationsCollection.doc(notificationId).update({
+          read_at: Date.now(),
+          updated_at: Date.now()
+        });
+        return { code: 0, msg: 'Marked as read' };
+      }
+
+      case 'getOwnProtocol': {
+        await purgeUntrustedActiveProtocols({ targetUserIds: [userId], clearPlansWhenNoTrusted: false });
+        const res = await protocolsCollection
+          .where({ user_id: userId, status: 'active' })
+          .get();
+        return { code: 0, data: selectLatestProtocol((res.data || []).filter((protocol) => isTrustedProtocol(protocol))) };
+      }
+
+      case 'getClientProtocol': {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const { clientId } = payload;
+        const managed = await ensureManagedClient(clientId);
+        if (managed.error) return managed.error;
+        await purgeUntrustedActiveProtocols({ targetUserIds: [clientId], clearPlansWhenNoTrusted: false });
+        const res = await protocolsCollection
+          .where({ user_id: clientId, status: 'active' })
+          .get();
+        return { code: 0, data: selectLatestProtocol((res.data || []).filter((protocol) => isTrustedProtocol(protocol))) };
+      }
+
+      case 'cleanupUnknownProtocols': {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const payloadClientIds = Array.isArray(payload?.clientIds) ? payload.clientIds : [];
+        const targetClientIds = payloadClientIds
+          .map((id) => String(id || '').trim())
+          .filter(Boolean);
+        const managedClients = await fetchManagedClients({
+          field: { _id: true },
+          limit: 5000
+        });
+        const managedClientIds = new Set(managedClients.map((client) => String(client?._id || '')).filter(Boolean));
+        const effectiveClientIds = targetClientIds.length
+          ? targetClientIds.filter((id) => managedClientIds.has(id))
+          : Array.from(managedClientIds);
+        const cleanupRes = await purgeUntrustedActiveProtocols({
+          targetUserIds: effectiveClientIds,
+          clearPlansWhenNoTrusted: true
+        });
+        return {
+          code: 0,
+          data: {
+            targetClients: effectiveClientIds.length,
+            removedProtocols: cleanupRes.removedProtocolCount,
+            clearedPlanUsers: cleanupRes.clearedPlanUserCount
+          }
+        };
+      }
+
+      case 'getClientLogs': {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const { clientId } = payload;
+        const managed = await ensureManagedClient(clientId);
+        if (managed.error) return managed.error;
+        const res = await interactionLogsCollection
+          .where({ user_id: clientId })
+          .orderBy('created_at', 'desc')
+          .get();
+        return { code: 0, data: res.data };
+      }
+
+      case 'addClientLog': {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const { clientId, nutritionistId, nutritionistName, content, type, followUpStatus } = payload;
+        const managed = await ensureManagedClient(clientId);
+        if (managed.error) return managed.error;
+        const nextStatus = ['未处理', '跟进中', '待回复'].includes(followUpStatus) ? followUpStatus : '待回复';
+        await interactionLogsCollection.add({
+          user_id: clientId,
+          client_id: clientId,
+          nutritionist_id: nutritionistId,
+          nutritionist_name: nutritionistName,
+          content: content,
+          type: type || 'wechat',
+          sender_role: 'nutritionist',
+          read_at: null,
+          follow_up_status: nextStatus,
+          created_at: Date.now()
+        });
+        
+        await usersCollection.doc(clientId).update({ 
+          isHandled: true,
+          follow_up_status: nextStatus,
+          follow_up_updated_at: Date.now(),
+          updated_at: Date.now()
+        });
+        
+        return { code: 0, msg: 'Log added' };
+      }
+
+      case 'addMyInteractionLog': {
+        const rawContent = typeof payload.content === 'string' ? payload.content : '';
+        const content = rawContent.trim();
+        if (!content) {
+          return { code: 400, msg: 'Content required' };
+        }
+        const assignedNutritionistId = currentUser.nutritionist_id || '';
+        if (!assignedNutritionistId) {
+          return { code: 400, msg: 'Nutritionist not assigned' };
+        }
+        await interactionLogsCollection.add({
+          user_id: userId,
+          client_id: userId,
+          nutritionist_id: assignedNutritionistId,
+          content,
+          type: payload.type || 'app',
+          sender_role: 'client',
+          client_name: currentUser.username || currentUser.nickname || '客户',
+          read_at: Date.now(),
+          created_at: Date.now()
+        });
+        await usersCollection.doc(userId).update({
+          follow_up_status: '跟进中',
+          follow_up_updated_at: Date.now(),
+          updated_at: Date.now()
+        });
+        return { code: 0, msg: 'Message sent' };
+      }
+
+      case 'updateClientFollowUpStatus': {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const { clientId, status } = payload;
+        const managed = await ensureManagedClient(clientId);
+        if (managed.error) return managed.error;
+        if (!clientId) return { code: 400, msg: 'Client ID required' };
+        if (!['未处理', '跟进中', '待回复'].includes(status)) {
+          return { code: 400, msg: 'Invalid follow-up status' };
+        }
+        await usersCollection.doc(clientId).update({
+          follow_up_status: status,
+          follow_up_updated_at: Date.now(),
+          updated_at: Date.now()
+        });
+        return { code: 0, msg: 'Status updated' };
+      }
+
+      case 'completePrimaryFollowUpAction': {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const { clientId, title, suggestion, source, actionNote, clientFeedback } = payload;
+        const managed = await ensureManagedClient(clientId);
+        if (managed.error) return managed.error;
+        if (!clientId) return { code: 400, msg: 'Client ID required' };
+        const normalizedActionNote = String(actionNote || '').trim();
+        const normalizedClientFeedback = String(clientFeedback || '').trim();
+        if (!normalizedActionNote) return { code: 400, msg: 'Action note required' };
+        if (!normalizedClientFeedback) return { code: 400, msg: 'Client feedback required' };
+        const userRes = await usersCollection.doc(clientId).field({ wrom_score: true, rps_score: true }).get();
+        if (!userRes.data.length) return { code: 404, msg: 'Client not found' };
+        const userRow = userRes.data[0] || {};
+        const actionId = await createFollowUpActionRecord({
+          targetUserId: String(clientId || ''),
+          nutritionistId: String(userId || ''),
+          title: String(title || '首要跟进行动'),
+          suggestion: String(suggestion || ''),
+          actionNote: normalizedActionNote,
+          clientFeedback: normalizedClientFeedback,
+          source: String(source || 'rps_primary'),
+          baselineWrom: Number(userRow?.wrom_score || 0),
+          baselineRps: Number(userRow?.rps_score || 0)
+        });
+        await usersCollection.doc(clientId).update({
+          follow_up_status: '跟进中',
+          follow_up_updated_at: Date.now(),
+          updated_at: Date.now()
+        });
+        const actionRes = await followUpActionsCollection.doc(actionId).get();
+        return { code: 0, data: actionRes.data[0] || null };
+      }
+
+      case 'getClientFollowUpActions': {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const { clientId } = payload;
+        const managed = await ensureManagedClient(clientId);
+        if (managed.error) return managed.error;
+        if (!clientId) return { code: 400, msg: 'Client ID required' };
+        await reviewDueFollowUpActions(String(clientId || ''));
+        return { code: 0, data: await getClientFollowUpActions(String(clientId || '')) };
+      }
+
+      case 'getProducts': {
+        // 产品库是全局共享的，不需要用户权限验证
+        const res = await productsCollection.orderBy('created_at', 'desc').get();
+        return { code: 0, data: res.data };
+      }
+
+      case 'addProduct': {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const { name, unit, icon, category, price, capacity, sub_unit, daily_usage, stock } = payload;
+        const rawProductId = typeof payload.product_id === 'string' ? payload.product_id.trim() : '';
+        const productId = rawProductId || `P${Date.now()}${Math.floor(Math.random() * 1000)}`;
+        const existed = await productsCollection.where({ product_id: productId }).limit(1).get();
+        if (existed.data.length > 0) {
+          return { code: 400, msg: 'Product ID already exists' };
+        }
+        await productsCollection.add({
+          product_id: productId,
+          name,
+          unit,
+          icon,
+          category: category || '',
+          price: Number(price) || 0,
+          stock: Number(stock) || 0,
+          capacity: Number(capacity) || 0,
+          sub_unit: sub_unit || '',
+          daily_usage: Number(daily_usage) || 0,
+          created_at: Date.now()
+        });
+        return { code: 0, msg: 'Product added' };
+      }
+
+      case 'getTemplates': {
+        // 配方库是全局共享的，不需要用户权限验证
+        try {
+          const res = await templatesCollection.orderBy('created_at', 'desc').get();
+          const templates = res.data.map(template => ({
+            ...template,
+            product_count: template.items ? template.items.length : 0
+          }));
+          return { code: 0, data: templates };
+        } catch (error) {
+          console.error('Get templates error:', error);
+          return { code: 500, msg: '获取配方失败' };
+        }
+      }
+
+      case 'applyTemplate': {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const { user_id, template_id } = payload;
+        
+        if (!user_id || !template_id) {
+          return { code: 400, msg: '用户ID和配方ID不能为空' };
+        }
+        
+        try {
+          // 获取配方模板
+          const templateRes = await templatesCollection.doc(template_id).get();
+          if (templateRes.data.length === 0) {
+            return { code: 404, msg: '配方模板不存在' };
+          }
+          
+          const template = templateRes.data[0];
+          
+          // 禁用用户现有方案
+          await protocolsCollection.where({
+            user_id: user_id,
+            status: 'active'
+          }).update({
+            status: 'inactive',
+            updated_at: Date.now()
+          });
+          
+          // 创建新方案
+          const protocol = {
+            user_id: user_id,
+            name: template.name,
+            description: template.description,
+            start_date: new Date().toISOString().split('T')[0],
+            end_date: new Date(Date.now() + (template.duration || 7) * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+            items: template.items || [],
+            status: 'active',
+            created_at: Date.now(),
+            updated_at: Date.now(),
+            source: 'template',
+            template_id: template_id
+          };
+          
+          await protocolsCollection.add(protocol);
+          
+          return { code: 0, msg: '配方应用成功' };
+        } catch (error) {
+          console.error('Apply template error:', error);
+          return { code: 500, msg: '应用配方失败' };
+        }
+      }
+
+      case 'updateProduct': {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const { id, ...updates } = payload;
+        delete updates._id; // Prevent updating _id
+        const productId = typeof updates.product_id === 'string' ? updates.product_id.trim() : '';
+        if (productId) {
+          const duplicatedRes = await productsCollection.where({ product_id: productId }).limit(2).get();
+          const duplicated = (duplicatedRes.data || []).some(item => String(item._id) !== String(id));
+          if (duplicated) {
+            return { code: 400, msg: 'Product ID already exists' };
+          }
+          updates.product_id = productId;
+        }
+        await productsCollection.doc(id).update({
+          ...updates,
+          price: Number(updates.price) || 0,
+          stock: Number(updates.stock) || 0,
+          capacity: Number(updates.capacity) || 0,
+          daily_usage: Number(updates.daily_usage) || 0,
+          updated_at: db.serverDate()
+        });
+        return { code: 0, msg: 'Product updated' };
+      }
+
+      case 'deleteProduct': {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const { id } = payload;
+        await productsCollection.doc(id).remove();
+        return { code: 0, msg: 'Product deleted' };
+      }
+
+      case 'saveProtocol': {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const { user_id, protocol } = payload;
+        
+        // 先禁用该用户的所有现有方案
+        await protocolsCollection.where({ user_id }).update({ status: 'inactive' });
+        
+        // 添加新方案
+        const res = await protocolsCollection.add({
+          user_id,
+          ...protocol,
+          created_at: db.serverDate(),
+          updated_at: db.serverDate()
+        });
+        
+        return { code: 0, msg: '方案保存成功', data: { _id: res.id } };
+      }
+
+      // --- Knowledge Base Actions ---
+      
+      case 'getKnowledgeList': {
+        const { category } = payload;
+        const query = category ? { category } : {};
+        const res = await knowledgeCollection
+          .where(query)
+          .orderBy('created_at', 'desc')
+          .get();
+        return { code: 0, data: res.data };
+      }
+
+      case 'addKnowledge': {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const { title, category, content, tags } = payload;
+        await knowledgeCollection.add({
+          title, category, content, tags,
+          created_at: Date.now(),
+          updated_at: Date.now()
+        });
+        return { code: 0, msg: 'Added' };
+      }
+
+      case 'updateKnowledge': {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const { id, ...updates } = payload;
+        delete updates._id;
+        await knowledgeCollection.doc(id).update({
+          ...updates,
+          updated_at: Date.now()
+        });
+        return { code: 0, msg: 'Updated' };
+      }
+
+      case 'deleteKnowledge': {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const { id } = payload;
+        await knowledgeCollection.doc(id).remove();
+        return { code: 0, msg: 'Deleted' };
+      }
+
+      // --- Templates (New) ---
+
+      case 'getTemplates': {
+        const res = await db.collection('he_templates').orderBy('create_date', 'desc').get();
+        return { code: 0, data: res.data };
+      }
+
+      case 'addTemplate': {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const { name, products, tags, description } = payload;
+        const res = await db.collection('he_templates').add({
+          name,
+          products,
+          tags,
+          description,
+          create_date: Date.now()
+        });
+        return { code: 0, data: res.id };
+      }
+
+      case 'updateTemplate': {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const { id, ...data } = payload;
+        const res = await db.collection('he_templates').doc(id).update({
+          ...data,
+          update_date: Date.now()
+        });
+        return { code: 0, data: res.updated };
+      }
+
+      case 'deleteTemplate': {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const { id } = payload;
+        const res = await db.collection('he_templates').doc(id).remove();
+        return { code: 0, data: res.deleted };
+      }
+
+     // --- Triggers (New) ---
+    case 'getTriggers': {
+      const denied = requireAdmin();
+      if (denied) return denied;
+      const triggerCollection = db.collection('he_triggers');
+      const res = await triggerCollection.where({ nutritionist_id: userId }).get();
+      let triggers = res.data;
+      
+      if (triggers.length === 0) {
+        const defaults = [
+          {
+            name: '连续未打卡预警',
+            type: 'missing_checkin',
+            description: '当客户连续多天未打卡时，触发预警通知。',
+            enabled: true,
+            config: { days: 3, level: 'high' }
+          },
+          {
+            name: 'WROM 低分预警',
+            type: 'low_wrom',
+            description: '当 WROM 综合评分低于设定阈值时，标记为关注对象。',
+            enabled: true,
+            config: { threshold: 60, notify_admin: true }
+          },
+          {
+            name: '库存不足提醒',
+            type: 'low_inventory',
+            description: '当预计库存可用天数低于设定值时，提醒客户补货。',
+            enabled: true,
+            config: { days_remaining: 5, auto_push: false }
+          }
+        ];
+        
+        for (const t of defaults) {
+          await triggerCollection.add({ ...t, nutritionist_id: userId, update_date: Date.now() });
+        }
+        const newRes = await triggerCollection.where({ nutritionist_id: userId }).get();
+        return { code: 0, data: newRes.data };
+      }
+      
+      return { code: 0, data: triggers };
+    }
+
+    case 'updateTrigger': {
+      const denied = requireAdmin();
+      if (denied) return denied;
+      const { id, enabled, config } = payload;
+      const triggerCollection = db.collection('he_triggers');
+      const currentRes = await triggerCollection.doc(id).get();
+      if (currentRes.data.length === 0) {
+        return { code: 404, msg: 'Trigger not found' };
+      }
+      if (String(currentRes.data[0].nutritionist_id || '') !== String(userId)) {
+        return { code: 403, msg: 'Permission denied' };
+      }
+      const res = await triggerCollection.doc(id).update({
+        enabled,
+        config,
+        update_date: Date.now()
+      });
+      return { code: 0, data: res.updated };
+    }
+
+    // --- Admin Actions ---
+      
+      case 'addClient': {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const { phone, name, gender, age, notes } = payload;
+        
+        // Check if user exists
+        const userRes = await usersCollection.where({ phone: phone }).get();
+        if (userRes.data.length > 0) {
+          return { code: 1, msg: '该手机号已存在' };
+        }
+        
+        // Create client user
+        const res = await usersCollection.add({
+          phone,
+          username: name || `客户${phone.slice(-4)}`,
+          role: 'client',
+          nutritionist_id: userId,
+          gender: gender || 'female',
+          age: age || 30,
+          notes: notes || '',
+          avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=' + phone,
+          wrom_score: 85, // Default score
+          rps_score: 75,
+          created_at: Date.now(),
+          tags: ['新客户'],
+          wrom_trend: 'flat',
+          rps_trend: 'flat',
+          is_online: false
+        });
+        
+        return { code: 0, data: res.id };
+      }
+
+      case 'getAdminReports': {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const triggerConfig = await getTriggerConfig(String(userId || ''));
+        const rangeDays = Number(payload?.rangeDays) === 30 ? 30 : 7;
+        const managedClients = await fetchManagedClients({
+          field: { _id: true, wrom_score: true, rps_score: true },
+          limit: 5000
+        });
+        const managedClientIds = managedClients.map(item => String(item._id)).filter(Boolean);
+        if (!managedClientIds.length) {
+          return {
+            code: 0,
+            data: {
+              totalClients: 0,
+              attentionClients: 0,
+              repurchaseAttentionClients: 0,
+              todayCheckIns: 0,
+              weeklyTrend: [0, 0, 0, 0, 0, 0, 0],
+              weeklyTrendRps: [0, 0, 0, 0, 0, 0, 0],
+              avgRpsScore: 0,
+              riskDistribution: {
+                low: { count: 0, percent: 0 },
+                medium: { count: 0, percent: 0 },
+                high: { count: 0, percent: 0 }
+              },
+              rpsDistribution: {
+                low: { count: 0, percent: 0 },
+                medium: { count: 0, percent: 0 },
+                high: { count: 0, percent: 0 }
+              }
+            }
+          };
+        }
+        const totalClients = managedClientIds.length;
+        await purgeUntrustedActiveProtocols({ targetUserIds: managedClientIds, clearPlansWhenNoTrusted: true });
+        let lowRiskCount = 0;
+        let mediumRiskCount = 0;
+        let highRiskCount = 0;
+        let highRpsRiskCount = 0;
+        let mediumRpsRiskCount = 0;
+        let lowRpsRiskCount = 0;
+        let rpsTotal = 0;
+        managedClients.forEach((client) => {
+          const wromScore = Number(client?.wrom_score || 0);
+          const rawRps = Number(client?.rps_score);
+          const rpsScore = Number.isFinite(rawRps) ? rawRps : 70;
+          if (wromScore < Number(triggerConfig.wromThreshold || 60)) {
+            highRiskCount += 1;
+          } else if (wromScore < 80) {
+            mediumRiskCount += 1;
+          } else {
+            lowRiskCount += 1;
+          }
+          if (rpsScore < 60) {
+            highRpsRiskCount += 1;
+          } else if (rpsScore < 80) {
+            mediumRpsRiskCount += 1;
+          } else {
+            lowRpsRiskCount += 1;
+          }
+          rpsTotal += rpsScore;
+        });
+
+        const today = new Date().toISOString().split('T')[0];
+        const dateKeys = [];
+        for (let i = rangeDays - 1; i >= 0; i -= 1) {
+          const date = new Date();
+          date.setDate(date.getDate() - i);
+          dateKeys.push(date.toISOString().split('T')[0]);
+        }
+        const [todayPlans, weeklyPlans, activeProtocols, inventories] = await Promise.all([
+          queryByUserIds(plansCollection, managedClientIds, { date: today }, { limit: 2000 }),
+          queryByUserIds(plansCollection, managedClientIds, { date: cmd.in(dateKeys) }, { limit: 4000 }),
+          queryByUserIds(protocolsCollection, managedClientIds, { status: 'active' }, { limit: 2000, orderBy: { field: 'updated_at', order: 'desc' } }),
+          queryByUserIds(inventoryCollection, managedClientIds, {}, { limit: 4000 })
+        ]);
+
+        const todayCheckInUsers = new Set();
+        (todayPlans || []).forEach((plan) => {
+          const summary = getCheckInSummary(plan);
+          if (summary.completed > 0 && plan?.user_id) {
+            todayCheckInUsers.add(String(plan.user_id));
+          }
+        });
+
+        const clientMap = new Map();
+        managedClients.forEach((item) => {
+          clientMap.set(String(item._id), item);
+        });
+        const protocolMap = new Map();
+        (activeProtocols || []).forEach((protocol) => {
+          if (!isTrustedProtocol(protocol)) return;
+          if (protocol?.user_id && !protocolMap.has(String(protocol.user_id))) {
+            protocolMap.set(String(protocol.user_id), protocol);
+          }
+        });
+        const inventoryMap = new Map();
+        (inventories || []).forEach((inventory) => {
+          const key = String(inventory?.user_id || '');
+          if (!key) return;
+          if (!inventoryMap.has(key)) inventoryMap.set(key, []);
+          inventoryMap.get(key).push(inventory);
+        });
+        const planMap = new Map();
+        (weeklyPlans || []).forEach((plan) => {
+          const key = `${String(plan?.user_id || '')}_${String(plan?.date || '')}`;
+          if (!planMap.has(key)) planMap.set(key, plan);
+        });
+        const inventoryPercentByUser = new Map();
+        managedClientIds.forEach((clientId) => {
+          const protocolItems = protocolMap.get(clientId)?.items || [];
+          const summary = getInventorySummary(inventoryMap.get(clientId) || [], protocolItems, {
+            lowStockDays: Number(triggerConfig.inventoryDaysRemaining || 5)
+          });
+          let inventoryPercent = 0;
+          if (summary.total_count > 0) {
+            const healthy = Math.max(0, Number(summary.total_count) - Number(summary.low_count || 0));
+            inventoryPercent = Math.round((healthy / Number(summary.total_count || 1)) * 100);
+          }
+          inventoryPercentByUser.set(clientId, Math.max(0, Math.min(100, inventoryPercent)));
+        });
+
+        const weeklyTrend = dateKeys.map((dateKey) => {
+          let dayTotal = 0;
+          let dayCount = 0;
+          managedClientIds.forEach((clientId) => {
+            const plan = planMap.get(`${clientId}_${dateKey}`);
+            const fallbackWrom = Number(clientMap.get(clientId)?.wrom_score || 0);
+            const inventoryPercent = Number(inventoryPercentByUser.get(clientId) || 0);
+            if (!plan) {
+              dayTotal += fallbackWrom;
+              dayCount += 1;
+              return;
+            }
+            const checkIn = getCheckInSummary(plan);
+            const symptoms = Array.isArray(plan?.symptoms) ? plan.symptoms : [];
+            const symptomAverage = symptoms.length
+              ? symptoms.reduce((sum, symptom) => sum + Number(symptom?.value || 0), 0) / symptoms.length
+              : 0;
+            const symptomPercent = Math.max(0, Math.min(100, Math.round((symptomAverage / 10) * 100)));
+            const engagementPercent = (Number(checkIn.completed || 0) > 0 || Number(plan?.water_intake || 0) > 0 || symptoms.length > 0) ? 90 : 70;
+            const score = Math.round(
+              Number(checkIn.completion_rate || 0) * 0.4 +
+              inventoryPercent * 0.3 +
+              symptomPercent * 0.2 +
+              engagementPercent * 0.1
+            );
+            dayTotal += score;
+            dayCount += 1;
+          });
+          return dayCount > 0 ? Math.round(dayTotal / dayCount) : 0;
+        });
+        const weeklyTrendRps = dateKeys.map((dateKey) => {
+          let dayTotal = 0;
+          let dayCount = 0;
+          managedClientIds.forEach((clientId) => {
+            const plan = planMap.get(`${clientId}_${dateKey}`);
+            const rawRps = Number(clientMap.get(clientId)?.rps_score);
+            const fallbackRps = Number.isFinite(rawRps) ? rawRps : 70;
+            const inventoryPercent = Number(inventoryPercentByUser.get(clientId) || 0);
+            if (!plan) {
+              dayTotal += fallbackRps;
+              dayCount += 1;
+              return;
+            }
+            const checkIn = getCheckInSummary(plan);
+            const symptoms = Array.isArray(plan?.symptoms) ? plan.symptoms : [];
+            const symptomAverage = symptoms.length
+              ? symptoms.reduce((sum, symptom) => sum + Number(symptom?.value || 0), 0) / symptoms.length
+              : 0;
+            const symptomPercent = Math.max(0, Math.min(100, Math.round((symptomAverage / 10) * 100)));
+            const behaviorScore = Math.round(
+              Number(checkIn.completion_rate || 0) * 0.5 +
+              inventoryPercent * 0.3 +
+              symptomPercent * 0.2
+            );
+            const score = Math.round(
+              Math.max(0, Math.min(100, fallbackRps)) * 0.7 +
+              behaviorScore * 0.3
+            );
+            dayTotal += score;
+            dayCount += 1;
+          });
+          return dayCount > 0 ? Math.round(dayTotal / dayCount) : 0;
+        });
+        
+        return {
+          code: 0,
+          data: {
+            totalClients,
+            attentionClients: highRiskCount,
+            repurchaseAttentionClients: highRpsRiskCount,
+            todayCheckIns: todayCheckInUsers.size,
+            weeklyTrend,
+            weeklyTrendRps,
+            avgRpsScore: totalClients > 0 ? Math.round(rpsTotal / totalClients) : 0,
+            riskDistribution: {
+              low: { count: lowRiskCount, percent: Math.round((lowRiskCount / totalClients) * 100) },
+              medium: { count: mediumRiskCount, percent: Math.round((mediumRiskCount / totalClients) * 100) },
+              high: { count: highRiskCount, percent: Math.round((highRiskCount / totalClients) * 100) }
+            },
+            rpsDistribution: {
+              low: { count: lowRpsRiskCount, percent: Math.round((lowRpsRiskCount / totalClients) * 100) },
+              medium: { count: mediumRpsRiskCount, percent: Math.round((mediumRpsRiskCount / totalClients) * 100) },
+              high: { count: highRpsRiskCount, percent: Math.round((highRpsRiskCount / totalClients) * 100) }
+            }
+          }
+        };
+      }
+
+      default:
+        return { code: 400, msg: 'Unknown action' };
+
+async function doCalculateWROM(userId) {
+  const userRes = await usersCollection.doc(userId).get();
+  if (userRes.data.length === 0) return null;
+  const client = userRes.data[0];
+
+  const now = Date.now();
+  const oneDay = 24 * 60 * 60 * 1000;
+  const sevenDaysAgo = now - (7 * oneDay);
+  const fourteenDaysAgo = now - (14 * oneDay);
+
+  // 1. Adherence (40%)
+  const plansRes = await plansCollection
+    .where({
+      user_id: userId,
+      created_at: db.command.gte(sevenDaysAgo)
+    })
+    .get();
+    
+  let totalTasks = 0;
+  let completedTasks = 0;
+  
+  plansRes.data.forEach(plan => {
+    if (plan.tasks && plan.tasks.length > 0) {
+      totalTasks += plan.tasks.length;
+      completedTasks += plan.tasks.filter(t => t.completed).length;
+    }
+  });
+  
+  let adherenceScore = 0;
+  if (totalTasks > 0) {
+    adherenceScore = (completedTasks / totalTasks) * 40;
+  } else {
+    const normalizeProtocolSource = (value) => String(value || '').trim().toLowerCase();
+    const getProtocolSourceFingerprint = (protocol = {}) => {
+      const meta = protocol?.meta && typeof protocol.meta === 'object' ? protocol.meta : {};
+      const extra = protocol?.extra && typeof protocol.extra === 'object' ? protocol.extra : {};
+      const values = [
+        protocol?.source,
+        protocol?.protocol_source,
+        protocol?.created_source,
+        protocol?.created_via,
+        protocol?.created_platform,
+        protocol?.source_type,
+        protocol?.origin,
+        protocol?.channel,
+        protocol?.platform,
+        protocol?.from,
+        meta?.source,
+        meta?.platform,
+        meta?.channel,
+        extra?.source,
+        extra?.platform
+      ];
+      return values.map(normalizeProtocolSource).filter(Boolean).join('|');
+    };
+    const protocolRes = await protocolsCollection.where({ user_id: userId, status: 'active' }).get();
+    const hasTrustedProtocol = (protocolRes.data || []).some((protocol) => getProtocolSourceFingerprint(protocol).includes('h5'));
+    if (hasTrustedProtocol) {
+      adherenceScore = 0; 
+    } else {
+      adherenceScore = 40;
+    }
+  }
+  
+  // 2. Inventory (30%)
+  const invRes = await inventoryCollection.where({ user_id: userId }).get();
+  const coverageDaysList = [];
+  if (invRes.data.length > 0) {
+    invRes.data.forEach(item => {
+      const capacity = Number(item?.capacity || 30);
+      const dailyUsage = Number(item?.daily_usage || 1);
+      const stock = Number(item?.stock || 0);
+      const safeCapacity = capacity > 0 ? capacity : 30;
+      const safeDailyUsage = dailyUsage > 0 ? dailyUsage : 1;
+      const totalPills = stock * safeCapacity;
+      const days = totalPills / safeDailyUsage;
+      if (Number.isFinite(days) && days >= 0) {
+        coverageDaysList.push(days);
+      }
+    });
+  }
+  let inventoryScore = 15;
+  let inventoryCoverageDays = 0;
+  if (coverageDaysList.length > 0) {
+    inventoryCoverageDays = coverageDaysList.reduce((sum, day) => sum + day, 0) / coverageDaysList.length;
+    const safeCoverage = Math.max(0, Math.min(inventoryCoverageDays, 120));
+    if (safeCoverage < 7) {
+      inventoryScore = Math.round((safeCoverage / 7) * 18);
+    } else if (safeCoverage <= 45) {
+      inventoryScore = 18 + Math.round(((safeCoverage - 7) / 38) * 12);
+    } else {
+      inventoryScore = Math.max(8, 30 - Math.round((safeCoverage - 45) * 0.35));
+    }
+    if (totalTasks > 0 && completedTasks === 0 && safeCoverage > 45) {
+      inventoryScore = Math.min(inventoryScore, 12);
+    }
+  }
+  
+  // 3. Symptom Trend (20%)
+  const symptomPlansRes = await plansCollection
+    .where({
+      user_id: userId,
+      created_at: db.command.gte(fourteenDaysAgo)
+    })
+    .orderBy('date', 'asc')
+    .get();
+    
+  let currentWeekSum = 0, currentWeekCount = 0;
+  let lastWeekSum = 0, lastWeekCount = 0;
+  
+  const sevenDaysAgoTs = Date.now() - (7 * 24 * 60 * 60 * 1000);
+  
+  symptomPlansRes.data.forEach(plan => {
+    if (plan.symptoms && plan.symptoms.length > 0) {
+      const dailySum = plan.symptoms.reduce((acc, s) => acc + (s.value || 0), 0);
+      const dailyAvg = dailySum / plan.symptoms.length;
+      
+      const planTs = plan.created_at || new Date(plan.date).getTime();
+      if (planTs >= sevenDaysAgoTs) {
+        currentWeekSum += dailyAvg;
+        currentWeekCount++;
+      } else {
+        lastWeekSum += dailyAvg;
+        lastWeekCount++;
+      }
+    }
+  });
+  
+  const sCurr = currentWeekCount > 0 ? (currentWeekSum / currentWeekCount) : 5;
+  const sLast = lastWeekCount > 0 ? (lastWeekSum / lastWeekCount) : 5;
+  
+  let symptomScore = 0;
+  if (sCurr >= sLast) {
+    symptomScore = 15 + (sCurr - sLast) * 5;
+    if (symptomScore > 20) symptomScore = 20;
+  } else {
+    symptomScore = 15 - (sLast - sCurr) * 10;
+    if (symptomScore < 0) symptomScore = 0;
+  }
+  
+  // 4. Engagement (10%)
+  let engagementScore = 8;
+  if (plansRes.data.length > 0) {
+    const activePlanDays = plansRes.data.filter((plan) => {
+      const tasks = Array.isArray(plan?.tasks) ? plan.tasks : [];
+      const hasCompletedTask = tasks.some((task) => !!task?.completed);
+      const hasWaterLog = Number(plan?.water_intake || 0) > 0;
+      const symptoms = Array.isArray(plan?.symptoms) ? plan.symptoms : [];
+      const hasSymptomLog = symptoms.length > 0;
+      return hasCompletedTask || hasWaterLog || hasSymptomLog;
+    }).length;
+    engagementScore = Math.max(7, Math.min(10, 7 + activePlanDays * 0.5));
+  }
+  
+  const totalScore = Math.round(adherenceScore + inventoryScore + symptomScore + engagementScore);
+  
+  const oldScore = client.wrom_score || 0;
+  let trend = 'flat';
+  if (totalScore > oldScore) trend = 'up';
+  else if (totalScore < oldScore) trend = 'down';
+  
+  const rpsResult = await doCalculateRPS(userId);
+  await usersCollection.doc(userId).update({
+    wrom_score: totalScore,
+    wrom_trend: trend,
+    wrom_breakdown: {
+      adherence: adherenceScore,
+      inventory: inventoryScore,
+      symptom: symptomScore,
+      engagement: engagementScore
+    },
+    last_wrom_calc: Date.now()
+  });
+  
+  return {
+    id: userId,
+    name: client.username,
+    score: totalScore,
+    breakdown: { adherenceScore, inventoryScore, symptomScore, engagementScore },
+    rps: rpsResult
+  };
+}
+
+async function doCalculateRPS(userId) {
+  const userRes = await usersCollection.doc(userId).get();
+  if (!userRes.data.length) return null;
+  const user = userRes.data[0];
+  const now = Date.now();
+  const oneDay = 24 * 60 * 60 * 1000;
+  const plansWindowStart = now - (30 * oneDay);
+  const orderWindowStart = now - (180 * oneDay);
+  const [orderRes, plansRes] = await Promise.all([
+    ordersCollection
+      .where({ user_id: userId, created_at: db.command.gte(orderWindowStart) })
+      .orderBy('created_at', 'desc')
+      .get(),
+    plansCollection
+      .where({ user_id: userId, created_at: db.command.gte(plansWindowStart) })
+      .orderBy('created_at', 'asc')
+      .get()
+  ]);
+
+  const recentOrders = Array.isArray(orderRes.data) ? orderRes.data : [];
+  const completedOrders = recentOrders
+    .filter((order) => Number(order?.status) === 2)
+    .sort((a, b) => Number(a?.created_at || 0) - Number(b?.created_at || 0));
+  const cancelledOrders = recentOrders.filter((order) => Number(order?.status) === -1);
+  const cancelRate = recentOrders.length > 0 ? (cancelledOrders.length / recentOrders.length) : 0;
+  const cancelRateComponent = Math.round(Math.max(0, Math.min(30, (1 - cancelRate) * 30)));
+
+  const receiptDelays = completedOrders
+    .map((order) => {
+      const shippedAt = Number(order?.shipped_at || 0);
+      const receivedAt = Number(order?.received_at || order?.updated_at || 0);
+      if (!shippedAt || !receivedAt || receivedAt <= shippedAt) return null;
+      return (receivedAt - shippedAt) / oneDay;
+    })
+    .filter((value) => Number.isFinite(value));
+  const avgReceiptDelay = receiptDelays.length > 0
+    ? receiptDelays.reduce((sum, delay) => sum + delay, 0) / receiptDelays.length
+    : 6;
+  let receiptDelayComponent = 16;
+  if (avgReceiptDelay <= 2) receiptDelayComponent = 25;
+  else if (avgReceiptDelay <= 5) receiptDelayComponent = 21;
+  else if (avgReceiptDelay <= 8) receiptDelayComponent = 16;
+  else if (avgReceiptDelay <= 12) receiptDelayComponent = 11;
+  else receiptDelayComponent = 6;
+
+  let repurchaseCycleComponent = 15;
+  if (completedOrders.length >= 2) {
+    const gaps = [];
+    for (let i = 1; i < completedOrders.length; i += 1) {
+      const prevTs = Number(completedOrders[i - 1]?.created_at || 0);
+      const currTs = Number(completedOrders[i]?.created_at || 0);
+      if (currTs > prevTs) {
+        gaps.push((currTs - prevTs) / oneDay);
+      }
+    }
+    const avgCycle = gaps.length > 0 ? gaps.reduce((sum, gap) => sum + gap, 0) / gaps.length : 35;
+    const variance = gaps.length > 1
+      ? gaps.reduce((sum, gap) => sum + Math.pow(gap - avgCycle, 2), 0) / gaps.length
+      : 0;
+    const cycleStd = Math.sqrt(Math.max(0, variance));
+    const cycleCV = avgCycle > 0 ? (cycleStd / avgCycle) : 0;
+    const lastCompletedTs = Number(completedOrders[completedOrders.length - 1]?.created_at || 0);
+    const daysSinceLastCompleted = lastCompletedTs > 0 ? (now - lastCompletedTs) / oneDay : avgCycle;
+    const ratio = avgCycle > 0 ? (daysSinceLastCompleted / avgCycle) : 1;
+    const ratioPenalty = ratio <= 1.1 ? 0 : Math.min(14, Math.round((ratio - 1.1) * 12));
+    const stabilityPenalty = Math.min(8, Math.round(cycleCV * 10));
+    repurchaseCycleComponent = Math.max(8, Math.min(30, 30 - ratioPenalty - stabilityPenalty));
+  } else if (completedOrders.length === 1) {
+    const daysSince = (now - Number(completedOrders[0]?.created_at || now)) / oneDay;
+    if (daysSince <= 30) {
+      repurchaseCycleComponent = 24;
+    } else if (daysSince >= 90) {
+      repurchaseCycleComponent = 10;
+    } else {
+      repurchaseCycleComponent = 24 - Math.round(((daysSince - 30) / 60) * 14);
+    }
+  }
+
+  const planRows = Array.isArray(plansRes.data) ? plansRes.data : [];
+  const symptomSnapshots = [];
+  planRows.forEach((plan) => {
+    const symptoms = Array.isArray(plan?.symptoms) ? plan.symptoms : [];
+    if (!symptoms.length) return;
+    const avg = symptoms.reduce((sum, symptom) => sum + Number(symptom?.value || 0), 0) / symptoms.length;
+    let ts = Number(plan?.created_at || 0);
+    if (!Number.isFinite(ts) || ts <= 0) {
+      const dateText = String(plan?.date || '').trim();
+      if (dateText) {
+        const parsed = new Date(`${dateText}T00:00:00Z`).getTime();
+        ts = Number.isFinite(parsed) ? parsed : 0;
+      }
+    }
+    symptomSnapshots.push({ ts, avg: Number.isFinite(avg) ? avg : 0 });
+  });
+  symptomSnapshots.sort((a, b) => Number(a.ts || 0) - Number(b.ts || 0));
+  const symptomCount = symptomSnapshots.length;
+  let effectComponent = 9;
+  if (symptomCount > 0) {
+    const recentWindow = symptomSnapshots.slice(-Math.min(3, symptomCount));
+    const baseWindow = symptomSnapshots.slice(0, Math.min(3, symptomCount));
+    const recentAvg = recentWindow.reduce((sum, row) => sum + Number(row.avg || 0), 0) / recentWindow.length;
+    const baseAvg = baseWindow.reduce((sum, row) => sum + Number(row.avg || 0), 0) / baseWindow.length;
+    const effectBase = Math.round((Math.max(0, Math.min(10, recentAvg)) / 10) * 10);
+    const trendDelta = recentAvg - baseAvg;
+    const trendBonus = Math.max(-3, Math.min(3, Math.round(trendDelta * 1.5)));
+    const coverageBonus = Math.min(2, Math.floor(symptomCount / 6));
+    effectComponent = Math.max(4, Math.min(15, effectBase + trendBonus + coverageBonus));
+  }
+
+  const totalScore = Math.max(0, Math.min(100, Math.round(
+    cancelRateComponent +
+    receiptDelayComponent +
+    repurchaseCycleComponent +
+    effectComponent
+  )));
+
+  const oldScore = Number(user?.rps_score || 0);
+  let trend = 'flat';
+  if (totalScore > oldScore) trend = 'up';
+  else if (totalScore < oldScore) trend = 'down';
+  
+  // RPS 下降或低于 60 分时，触发待回复状态
+  const isScoreDropped = totalScore < oldScore;
+  const isLowScore = totalScore < 60;
+  const shouldEscalate = isScoreDropped || isLowScore;
+  
+  const updates = {
+    rps_score: totalScore,
+    rps_trend: trend,
+    rps_breakdown: {
+      cancel_rate: cancelRateComponent,
+      receipt_delay: receiptDelayComponent,
+      cycle: repurchaseCycleComponent,
+      effect: effectComponent
+    },
+    last_rps_calc: now
+  };
+  
+  if (shouldEscalate) {
+    updates.follow_up_status = '待回复';
+    updates.follow_up_updated_at = now;
+  }
+  await usersCollection.doc(userId).update(updates);
+
+  const nutritionistId = String(user?.nutritionist_id || '');
+  if (shouldEscalate && nutritionistId) {
+    const category = isScoreDropped ? 'rps_score_dropped' : 'rps_low_risk';
+    const title = isScoreDropped ? '复购评分下降预警' : '复购风险预警';
+    const content = isScoreDropped 
+      ? `客户 ${user?.username || user?.nickname || '未命名'} 的 RPS 下降了 ${oldScore - totalScore} 分，请及时跟进。`
+      : `客户 ${user?.username || user?.nickname || '未命名'} 的 RPS 低于 60，建议优先跟进。`;
+
+    const dedupeRes = await notificationsCollection.where({
+      target_role: 'admin',
+      target_user_id: nutritionistId,
+      category: category,
+      reference_type: 'client',
+      reference_id: String(userId || ''),
+      created_at: db.command.gte(now - oneDay)
+    }).limit(1).get();
+    
+    if (!Array.isArray(dedupeRes.data) || dedupeRes.data.length === 0) {
+      await notificationsCollection.add({
+        target_user_id: nutritionistId,
+        target_role: 'admin',
+        nutritionist_id: nutritionistId,
+        title: title,
+        content: content,
+        category: category,
+        channel: 'in_app',
+        reference_type: 'client',
+        reference_id: String(userId || ''),
+        metadata: {
+          client_id: String(userId || ''),
+          rps_score: totalScore,
+          old_rps_score: oldScore,
+          delta_rps: totalScore - oldScore
+        },
+        created_at: now,
+        updated_at: now
+      });
+    }
+  }
+
+  return {
+    score: totalScore,
+    trend,
+    breakdown: {
+      cancel_rate: cancelRateComponent,
+      receipt_delay: receiptDelayComponent,
+      cycle: repurchaseCycleComponent,
+      effect: effectComponent
+    }
+  };
+}
+
+  } catch (err) {
+    console.error(err);
+    return { code: 500, msg: err.message };
+  }
+};

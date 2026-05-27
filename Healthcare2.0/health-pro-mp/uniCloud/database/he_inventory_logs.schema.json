@@ -1,0 +1,72 @@
+{
+  "bsonType": "object",
+  "required": ["user_id", "change_type", "delta", "before_stock", "after_stock", "created_at"],
+  "permission": {
+    "read": "auth.uid == doc.user_id || auth.role == 'admin'",
+    "create": "auth.uid != null",
+    "update": false,
+    "delete": "auth.role == 'admin'"
+  },
+  "properties": {
+    "_id": {
+      "description": "ID，系统自动生成"
+    },
+    "user_id": {
+      "bsonType": "string",
+      "description": "客户ID"
+    },
+    "inventory_id": {
+      "bsonType": "string",
+      "description": "库存记录ID"
+    },
+    "product_id": {
+      "bsonType": "string",
+      "description": "产品ID"
+    },
+    "item_name": {
+      "bsonType": "string",
+      "description": "产品名称快照"
+    },
+    "change_type": {
+      "bsonType": "string",
+      "enum": ["task_consume", "task_revert", "order_receipt", "manual_adjust"],
+      "description": "变更类型"
+    },
+    "delta": {
+      "bsonType": "double",
+      "description": "库存变化量，正数增加，负数减少"
+    },
+    "before_stock": {
+      "bsonType": "double",
+      "description": "变更前库存"
+    },
+    "after_stock": {
+      "bsonType": "double",
+      "description": "变更后库存"
+    },
+    "reference_type": {
+      "bsonType": "string",
+      "description": "关联来源类型"
+    },
+    "reference_id": {
+      "bsonType": "string",
+      "description": "关联来源ID"
+    },
+    "remark": {
+      "bsonType": "string",
+      "description": "备注"
+    },
+    "operator_id": {
+      "bsonType": "string",
+      "description": "操作人ID"
+    },
+    "operator_role": {
+      "bsonType": "string",
+      "description": "操作人角色"
+    },
+    "created_at": {
+      "bsonType": "timestamp",
+      "description": "创建时间"
+    }
+  }
+}

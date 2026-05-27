@@ -1,0 +1,60 @@
+{
+  "bsonType": "object",
+  "required": ["name", "products"],
+  "permission": {
+    "read": true,
+    "create": true,
+    "update": true,
+    "delete": true
+  },
+  "properties": {
+    "name": {
+      "bsonType": "string",
+      "description": "模板名称"
+    },
+    "description": {
+      "bsonType": "string",
+      "description": "描述"
+    },
+    "tags": {
+      "bsonType": "array",
+      "description": "标签",
+      "items": {
+        "bsonType": "string"
+      }
+    },
+    "products": {
+      "bsonType": "array",
+      "description": "包含的产品",
+      "items": {
+        "bsonType": "object",
+        "required": ["name", "dosage", "time"],
+        "properties": {
+          "id": {
+            "bsonType": "string",
+            "description": "产品ID (可选)"
+          },
+          "name": {
+            "bsonType": "string",
+            "description": "产品名称"
+          },
+          "dosage": {
+            "bsonType": "string",
+            "description": "剂量 (e.g., 2粒)"
+          },
+          "time": {
+            "bsonType": "string",
+            "description": "服用时间 (e.g., 早餐后)"
+          }
+        }
+      }
+    },
+    "create_date": {
+      "bsonType": "timestamp",
+      "description": "创建时间",
+      "forceDefaultValue": {
+        "$env": "now"
+      }
+    }
+  }
+}

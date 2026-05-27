@@ -1,0 +1,65 @@
+{
+  "bsonType": "object",
+  "required": ["user_id", "date", "tasks"],
+  "permission": {
+    "read": "auth.uid == doc.user_id",
+    "create": "auth.uid != null",
+    "update": "auth.uid == doc.user_id",
+    "delete": "auth.uid == doc.user_id"
+  },
+  "properties": {
+    "_id": {
+      "description": "ID"
+    },
+    "user_id": {
+      "bsonType": "string",
+      "description": "用户ID"
+    },
+    "date": {
+      "bsonType": "string",
+      "description": "日期 YYYY-MM-DD"
+    },
+    "tasks": {
+      "bsonType": "array",
+      "description": "任务列表",
+      "items": {
+        "bsonType": "object",
+        "required": ["name", "slot", "completed"],
+        "properties": {
+          "name": { "bsonType": "string" },
+          "dose": { "bsonType": "string" },
+          "instruction": { "bsonType": "string" },
+          "slot": { 
+            "bsonType": "string",
+            "enum": ["早", "中", "晚", "睡"]
+          },
+          "completed": { "bsonType": "bool" }
+        }
+      }
+    },
+    "water_intake": {
+      "bsonType": "double",
+      "description": "今日饮水量(L)",
+      "defaultValue": 0
+    },
+    "symptoms": {
+      "bsonType": "array",
+      "description": "体感反馈列表",
+      "items": {
+        "bsonType": "object",
+        "required": ["label", "value"],
+        "properties": {
+          "label": { "bsonType": "string" },
+          "value": { "bsonType": "int" }
+        }
+      }
+    },
+    "symptom_notes": {
+      "bsonType": "string",
+      "description": "体感反馈备注"
+    },
+    "updated_at": {
+      "bsonType": "timestamp"
+    }
+  }
+}

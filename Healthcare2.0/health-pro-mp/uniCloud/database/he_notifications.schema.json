@@ -1,0 +1,68 @@
+{
+  "bsonType": "object",
+  "required": ["target_user_id", "target_role", "title", "content", "category"],
+  "permission": {
+    "read": "auth.uid == doc.target_user_id || auth.uid == doc.nutritionist_id || auth.role == 'admin'",
+    "create": "auth.role == 'admin'",
+    "update": "auth.uid == doc.target_user_id || auth.uid == doc.nutritionist_id || auth.role == 'admin'",
+    "delete": "auth.role == 'admin'"
+  },
+  "properties": {
+    "_id": {
+      "description": "ID"
+    },
+    "target_user_id": {
+      "bsonType": "string",
+      "description": "目标用户ID"
+    },
+    "nutritionist_id": {
+      "bsonType": "string",
+      "description": "顾问ID"
+    },
+    "target_role": {
+      "bsonType": "string",
+      "enum": ["admin", "client"],
+      "description": "目标角色"
+    },
+    "title": {
+      "bsonType": "string",
+      "description": "通知标题"
+    },
+    "content": {
+      "bsonType": "string",
+      "description": "通知内容"
+    },
+    "category": {
+      "bsonType": "string",
+      "description": "通知分类"
+    },
+    "channel": {
+      "bsonType": "string",
+      "description": "通知渠道"
+    },
+    "reference_type": {
+      "bsonType": "string",
+      "description": "关联类型"
+    },
+    "reference_id": {
+      "bsonType": "string",
+      "description": "关联ID"
+    },
+    "metadata": {
+      "bsonType": "object",
+      "description": "扩展元数据"
+    },
+    "read_at": {
+      "bsonType": ["int", "null"],
+      "description": "已读时间戳"
+    },
+    "created_at": {
+      "bsonType": ["timestamp", "int"],
+      "defaultValue": { "$env": "now" }
+    },
+    "updated_at": {
+      "bsonType": ["timestamp", "int"],
+      "defaultValue": { "$env": "now" }
+    }
+  }
+}

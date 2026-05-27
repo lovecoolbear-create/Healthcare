@@ -1,0 +1,40 @@
+{
+  "bsonType": "object",
+  "required": ["user_id", "date", "type", "value", "unit"],
+  "permission": {
+    "read": "auth.uid == doc.user_id",
+    "create": "auth.uid != null",
+    "update": "auth.uid == doc.user_id",
+    "delete": "auth.uid == doc.user_id"
+  },
+  "properties": {
+    "_id": {
+      "description": "ID，系统自动生成"
+    },
+    "user_id": {
+      "bsonType": "string",
+      "description": "用户ID，参考uni-id-users表"
+    },
+    "date": {
+      "bsonType": "string",
+      "description": "记录日期，格式 YYYY-MM-DD"
+    },
+    "type": {
+      "bsonType": "string",
+      "description": "指标类型: weight(体重), lipids(血脂), glucose(血糖), visceral_fat(内脏脂肪), body_fat(体脂率)",
+      "enum": ["weight", "lipids", "glucose", "visceral_fat", "body_fat"]
+    },
+    "value": {
+      "bsonType": "double",
+      "description": "指标数值"
+    },
+    "unit": {
+      "bsonType": "string",
+      "description": "单位"
+    },
+    "created_at": {
+      "bsonType": "timestamp",
+      "description": "创建时间"
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@anthropic-ai/mcp-playwright"],
+      "description": "浏览器自动化测试 - 截图、点击、表单填写",
+      "env": {}
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/Users/blair/HealthCare"],
+      "description": "文件系统操作 - 批量处理测试数据"
+    }
+  }
+}

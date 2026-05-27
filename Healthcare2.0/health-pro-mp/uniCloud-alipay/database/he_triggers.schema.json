@@ -1,0 +1,39 @@
+{
+  "bsonType": "object",
+  "required": ["name", "type", "config", "nutritionist_id"],
+  "permission": {
+    "read": true,
+    "create": true,
+    "update": true,
+    "delete": true
+  },
+  "properties": {
+    "name": {
+      "bsonType": "string",
+      "description": "规则名称"
+    },
+    "type": {
+      "bsonType": "string",
+      "description": "规则类型标识"
+    },
+    "description": {
+      "bsonType": "string",
+      "description": "规则描述"
+    },
+    "nutritionist_id": {
+      "bsonType": "string",
+      "description": "所属营养师ID"
+    },
+    "enabled": {
+      "bsonType": "bool",
+      "description": "是否启用"
+    },
+    "config": {
+      "bsonType": "object",
+      "description": "规则参数配置"
+    },
+    "update_date": {
+      "bsonType": ["timestamp", "int"]
+    }
+  }
+}

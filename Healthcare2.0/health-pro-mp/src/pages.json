@@ -1,0 +1,198 @@
+{ 
+	"pages": [
+		{
+			"path": "pages/common/login/index",
+			"style": {
+				"navigationBarTitleText": "登录",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/common/role-select/index",
+			"style": {
+				"navigationBarTitleText": "选择身份",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/index/index",
+			"style": {
+				"navigationBarTitleText": "HealthCare Pro"
+			}
+		},
+		{
+			"path": "pages/client/home/index",
+			"style": {
+				"navigationBarTitleText": "今日打卡",
+				"navigationStyle": "custom"
+			}
+		},
+        {
+			"path": "pages/client/trends/index",
+			"style": {
+				"navigationBarTitleText": "健康趋势",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/client/inventory/index",
+			"style": {
+				"navigationBarTitleText": "我的库存",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/client/orders/index",
+			"style": {
+				"navigationBarTitleText": "我的订单",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/client/profile/index",
+			"style": {
+				"navigationBarTitleText": "个人中心",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/client/protocol/index",
+			"style": {
+				"navigationBarTitleText": "我的健康方案",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/client/summary/index",
+			"style": {
+				"navigationBarTitleText": "周度总结",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/client/messages/index",
+			"style": {
+				"navigationBarTitleText": "顾问消息",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/client/course-exchange/index",
+			"style": {
+				"navigationBarTitleText": "积分兑换课程",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/admin/clients/index",
+			"style": {
+				"navigationBarTitleText": "客户档案库",
+				"navigationStyle": "custom"
+			}
+		},
+        {
+			"path": "pages/admin/clients/add",
+			"style": {
+				"navigationBarTitleText": "添加客户",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/admin/protocol/index",
+			"style": {
+				"navigationBarTitleText": "制定健康方案",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/admin/templates/select",
+			"style": {
+				"navigationBarTitleText": "选择健康配方",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/admin/client-detail/index",
+			"style": {
+				"navigationBarTitleText": "客户详情",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/admin/dashboard/index",
+			"style": {
+				"navigationBarTitleText": "工作台",
+				"navigationStyle": "custom"
+			}
+		},
+        {
+			"path": "pages/admin/products/index",
+			"style": {
+				"navigationBarTitleText": "产品库",
+				"navigationStyle": "custom"
+			}
+		},
+        {
+			"path": "pages/admin/templates/index",
+			"style": {
+				"navigationBarTitleText": "配方库",
+				"navigationStyle": "custom"
+			}
+		},
+        {
+			"path": "pages/admin/triggers/index",
+			"style": {
+				"navigationBarTitleText": "触发器配置",
+				"navigationStyle": "custom"
+			}
+		},
+        {
+			"path": "pages/admin/reports/index",
+			"style": {
+				"navigationBarTitleText": "数据报告",
+				"navigationStyle": "custom"
+			}
+		},
+        {
+			"path": "pages/admin/orders/index",
+			"style": {
+				"navigationBarTitleText": "订单管理",
+				"navigationStyle": "custom"
+			}
+		},
+        {
+			"path": "pages/admin/courses/index",
+			"style": {
+				"navigationBarTitleText": "课程管理",
+				"navigationStyle": "custom"
+			}
+		},
+        {
+			"path": "pages/admin/knowledge/index",
+			"style": {
+				"navigationBarTitleText": "知识库",
+				"navigationStyle": "custom"
+			}
+		},
+        {
+			"path": "pages/admin/settings/index",
+			"style": {
+				"navigationBarTitleText": "设置",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/admin/share-report/index",
+			"style": {
+				"navigationBarTitleText": "分享海报",
+				"navigationStyle": "custom"
+			}
+		}
+	],
+	"globalStyle": {
+		"navigationBarTextStyle": "black",
+		"navigationBarTitleText": "HealthCare Pro",
+		"navigationBarBackgroundColor": "#F8F8F8",
+		"backgroundColor": "#F8F8F8"
+	}
+}

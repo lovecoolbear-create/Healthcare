@@ -1,0 +1,33 @@
+{
+  "bsonType": "object",
+  "required": ["user_id", "nutritionist_id", "title", "status", "created_at"],
+  "permission": {
+    "read": "auth.uid == doc.user_id || auth.uid == doc.nutritionist_id || auth.role == 'admin'",
+    "create": "auth.role == 'admin'",
+    "update": "auth.role == 'admin'",
+    "delete": "auth.role == 'admin'"
+  },
+  "properties": {
+    "_id": { "description": "ID" },
+    "user_id": { "bsonType": "string", "description": "客户ID" },
+    "nutritionist_id": { "bsonType": "string", "description": "顾问ID" },
+    "title": { "bsonType": "string", "description": "行动标题" },
+    "suggestion": { "bsonType": "string", "description": "行动建议文案" },
+    "action_note": { "bsonType": "string", "description": "顾问执行内容" },
+    "client_feedback": { "bsonType": "string", "description": "客户反馈摘要" },
+    "source": { "bsonType": "string", "description": "来源类型" },
+    "status": { "bsonType": "string", "enum": ["executed", "reviewed"], "description": "行动状态" },
+    "created_at": { "bsonType": ["int", "timestamp"], "description": "创建时间" },
+    "executed_at": { "bsonType": ["int", "timestamp"], "description": "执行时间" },
+    "review_due_at": { "bsonType": ["int", "timestamp"], "description": "复核到期时间" },
+    "reviewed_at": { "bsonType": ["int", "timestamp"], "description": "复核时间" },
+    "baseline_wrom": { "bsonType": "int", "description": "执行时WROM基线" },
+    "baseline_rps": { "bsonType": "int", "description": "执行时RPS基线" },
+    "result_wrom": { "bsonType": ["int", "null"], "description": "复核后WROM" },
+    "result_rps": { "bsonType": ["int", "null"], "description": "复核后RPS" },
+    "delta_wrom": { "bsonType": ["int", "null"], "description": "WROM变化" },
+    "delta_rps": { "bsonType": ["int", "null"], "description": "RPS变化" },
+    "regression_level": { "bsonType": "string", "description": "复核下滑严重度" },
+    "updated_at": { "bsonType": ["int", "timestamp"], "description": "更新时间" }
+  }
+}

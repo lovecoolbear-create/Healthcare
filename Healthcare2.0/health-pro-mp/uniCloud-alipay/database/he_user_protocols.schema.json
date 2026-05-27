@@ -1,0 +1,63 @@
+{
+  "bsonType": "object",
+  "required": ["user_id", "name", "start_date", "status", "phases"],
+  "permission": {
+    "read": "auth.uid == doc.user_id || auth.role == 'admin'",
+    "create": "auth.role == 'admin'",
+    "update": "auth.role == 'admin'",
+    "delete": "auth.role == 'admin'"
+  },
+  "properties": {
+    "_id": {
+      "description": "ID"
+    },
+    "user_id": {
+      "bsonType": "string",
+      "description": "用户ID"
+    },
+    "name": {
+      "bsonType": "string",
+      "description": "方案名称"
+    },
+    "start_date": {
+      "bsonType": "string",
+      "description": "开始日期 (YYYY-MM-DD)"
+    },
+    "status": {
+      "bsonType": "string",
+      "enum": ["active", "completed", "cancelled"],
+      "description": "方案状态"
+    },
+    "phases": {
+      "bsonType": "array",
+      "description": "阶段列表",
+      "items": {
+        "bsonType": "object",
+        "required": ["name", "duration", "status", "products"],
+        "properties": {
+          "name": { "bsonType": "string" },
+          "duration": { "bsonType": "int" },
+          "currentDay": { "bsonType": "int" },
+          "status": { "bsonType": "string", "enum": ["pending", "active", "completed"] },
+          "expanded": { "bsonType": "bool" },
+          "products": {
+            "bsonType": "array",
+            "items": {
+              "bsonType": "object",
+              "required": ["name", "dosage", "frequency"],
+              "properties": {
+                "name": { "bsonType": "string" },
+                "dosage": { "bsonType": "string" },
+                "frequency": { "bsonType": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "created_at": {
+      "bsonType": "timestamp",
+      "defaultValue": { "$env": "now" }
+    }
+  }
+}

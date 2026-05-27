@@ -1,0 +1,57 @@
+{
+  "bsonType": "object",
+  "required": ["user_id", "nutritionist_id", "content", "type"],
+  "permission": {
+    "read": "auth.uid == doc.user_id || auth.role == 'admin'",
+    "create": "auth.role == 'admin'",
+    "update": "auth.role == 'admin'",
+    "delete": "auth.role == 'admin'"
+  },
+  "properties": {
+    "_id": {
+      "description": "ID"
+    },
+    "user_id": {
+      "bsonType": "string",
+      "description": "客户ID"
+    },
+    "nutritionist_id": {
+      "bsonType": "string",
+      "description": "营养师ID"
+    },
+    "nutritionist_name": {
+      "bsonType": "string",
+      "description": "营养师姓名"
+    },
+    "content": {
+      "bsonType": "string",
+      "description": "日志内容"
+    },
+    "type": {
+      "bsonType": "string",
+      "enum": ["call", "wechat", "system", "meeting", "app"],
+      "description": "互动类型"
+    },
+    "sender_role": {
+      "bsonType": "string",
+      "enum": ["client", "nutritionist", "system"],
+      "description": "发送方角色"
+    },
+    "client_name": {
+      "bsonType": "string",
+      "description": "客户名称"
+    },
+    "follow_up_status": {
+      "bsonType": "string",
+      "description": "跟进状态"
+    },
+    "read_at": {
+      "bsonType": ["int", "null"],
+      "description": "客户已读时间戳"
+    },
+    "created_at": {
+      "bsonType": ["timestamp", "int"],
+      "defaultValue": { "$env": "now" }
+    }
+  }
+}

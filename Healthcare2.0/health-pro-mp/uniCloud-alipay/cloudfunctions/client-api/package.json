@@ -1,0 +1,9 @@
+{
+  "name": "client-api",
+  "dependencies": {
+    "pg-connect": "file:../common/pg-connect"
+  },
+  "extensions": {
+    "uni-cloud-jql": {}
+  }
+}

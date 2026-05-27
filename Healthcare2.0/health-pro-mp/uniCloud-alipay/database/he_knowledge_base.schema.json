@@ -1,0 +1,36 @@
+{
+  "bsonType": "object",
+  "required": ["title", "category", "content"],
+  "permission": {
+    "read": true,
+    "create": true,
+    "update": true,
+    "delete": true
+  },
+  "properties": {
+    "title": {
+      "bsonType": "string",
+      "description": "标题"
+    },
+    "category": {
+      "bsonType": "string",
+      "description": "分类：product, research, script"
+    },
+    "content": {
+      "bsonType": "string",
+      "description": "内容"
+    },
+    "tags": {
+      "bsonType": "array",
+      "items": {
+        "bsonType": "string"
+      }
+    },
+    "created_at": {
+      "bsonType": "double"
+    },
+    "updated_at": {
+      "bsonType": "double"
+    }
+  }
+}

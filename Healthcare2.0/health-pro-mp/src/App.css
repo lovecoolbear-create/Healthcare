@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom Styles from Original Project */
+.action-card {
+  background-color: #fff;
+  border-radius: 24rpx;
+  padding: 32rpx;
+  margin-bottom: 32rpx;
+  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.05);
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+.action-card.pending {
+  border-left: 8rpx solid #10b981;
+}
+
+.action-card.completed {
+  opacity: 0.8;
+  background-color: #f0fdf4;
+}

@@ -1,0 +1,9 @@
+{
+  "name": "pg-connect",
+  "dependencies": {
+    "pg": "^8.11.3"
+  },
+  "extensions": {
+    "uni-cloud-jql": {}
+  }
+}

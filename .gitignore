@@ -2,9 +2,9 @@
 node_modules
 .pnpm-store
 
-# next.js
-.next/
-out/
+# uni-app
+unpackage/
+.hbuilderx/
 
 # production
 build
@@ -21,10 +21,22 @@ yarn-error.log*
 
 # local env files
 .env*.local
-
-# vercel
-.vercel
+.env.local
+.env.*.local
 
 # typescript
 *.tsbuildinfo
-next-env.d.ts
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# logs
+*.log
+
+# temp files
+*.tmp
+*.temp

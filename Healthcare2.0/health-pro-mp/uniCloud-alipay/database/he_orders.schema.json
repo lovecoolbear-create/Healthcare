@@ -1,0 +1,142 @@
+{
+  "bsonType": "object",
+  "required": ["user_id", "items", "status", "created_at"],
+  "permission": {
+    "read": true,
+    "create": true,
+    "update": true,
+    "delete": false
+  },
+  "properties": {
+    "_id": {
+      "description": "订单ID，系统自动生成"
+    },
+    "order_no": {
+      "bsonType": "string",
+      "description": "业务订单号（创建时生成，多端展示一致），如 HP20260514A1B2C3"
+    },
+    "user_id": {
+      "bsonType": "string",
+      "description": "用户ID，关联he_users"
+    },
+    "nutritionist_id": {
+      "bsonType": "string",
+      "description": "顾问ID，关联顾问端"
+    },
+    "items": {
+      "bsonType": "array",
+      "description": "订单产品列表",
+      "items": {
+        "bsonType": "object",
+        "properties": {
+          "inventory_id": {
+            "bsonType": "string"
+          },
+          "product_id": {
+            "bsonType": "string"
+          },
+          "name": {
+            "bsonType": "string"
+          },
+          "product_name": {
+            "bsonType": "string"
+          },
+          "quantity": {
+            "bsonType": "number"
+          },
+          "unit": {
+            "bsonType": "string"
+          },
+          "icon": {
+            "bsonType": "string"
+          },
+          "status": {
+            "bsonType": "int",
+            "description": "子订单状态：0待发货，1已发货，2已收货，3已取消"
+          },
+          "sub_order_id": {
+            "bsonType": "string",
+            "description": "子订单ID"
+          },
+          "tracking_no": {
+            "bsonType": "string",
+            "description": "子订单物流单号"
+          },
+          "tracking_image": {
+            "bsonType": "string",
+            "description": "子订单物流单图片URL"
+          },
+          "shipped_at": {
+            "bsonType": "timestamp",
+            "description": "子订单发货时间"
+          },
+          "received_at": {
+            "bsonType": "timestamp",
+            "description": "子订单收货时间"
+          },
+          "cancelled_at": {
+            "bsonType": "timestamp",
+            "description": "子订单取消时间"
+          }
+        }
+      }
+    },
+    "status": {
+      "bsonType": "int",
+      "description": "订单状态：0待发货，1已发货/部分发货，2已收货，3已取消",
+      "enum": [0, 1, 2, 3]
+    },
+    "tracking_no": {
+      "bsonType": "string",
+      "description": "物流单号"
+    },
+    "tracking_image": {
+      "bsonType": "string",
+      "description": "快递单图片URL"
+    },
+    "shipped_at": {
+      "bsonType": "timestamp",
+      "description": "发货时间"
+    },
+    "username": {
+      "bsonType": "string",
+      "description": "客户用户名"
+    },
+    "avatar": {
+      "bsonType": "string",
+      "description": "客户头像"
+    },
+    "phone": {
+      "bsonType": "string",
+      "description": "客户手机号"
+    },
+    "product_name": {
+      "bsonType": "string",
+      "description": "产品名称摘要"
+    },
+    "quantity": {
+      "bsonType": "int",
+      "description": "总数量"
+    },
+    "created_at": {
+      "bsonType": "timestamp",
+      "description": "创建时间"
+    },
+    "updated_at": {
+      "bsonType": "timestamp",
+      "description": "更新时间"
+    },
+    "received_at": {
+      "bsonType": "timestamp",
+      "description": "收货时间"
+    },
+    "partially_cancelled_at": {
+      "bsonType": "timestamp",
+      "description": "部分取消时间"
+    },
+    "cancelled_items_count": {
+      "bsonType": "int",
+      "description": "已取消的商品数量"
+    }
+  }
+}

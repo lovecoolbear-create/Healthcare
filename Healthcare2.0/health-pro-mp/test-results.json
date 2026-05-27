@@ -1,0 +1,359 @@
+{
+  "config": {
+    "configFile": "/Users/blair/HealthCare/Healthcare2.0/health-pro-mp/playwright.config.ts",
+    "rootDir": "/Users/blair/HealthCare/Healthcare2.0/health-pro-mp/tests",
+    "forbidOnly": false,
+    "fullyParallel": true,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 5
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/Users/blair/HealthCare/Healthcare2.0/health-pro-mp/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 5
+        },
+        "id": "chromium",
+        "name": "chromium",
+        "testDir": "/Users/blair/HealthCare/Healthcare2.0/health-pro-mp/tests",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "html",
+        null
+      ],
+      [
+        "json",
+        {
+          "outputFile": "test-results.json"
+        }
+      ],
+      [
+        "list",
+        null
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.59.1",
+    "workers": 5,
+    "webServer": {
+      "command": "npm run dev:h5",
+      "url": "http://localhost:3000",
+      "reuseExistingServer": true
+    }
+  },
+  "suites": [
+    {
+      "title": "orders.spec.ts",
+      "file": "orders.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "订单管理测试",
+          "file": "orders.spec.ts",
+          "line": 9,
+          "column": 6,
+          "specs": [
+            {
+              "title": "管理员可以查看待发货订单",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "failed",
+                      "duration": 5371,
+                      "error": {
+                        "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByText('待发货')\nExpected: visible\nError: strict mode violation: getByText('待发货') resolved to 3 elements:\n    1) <p class=\"text-sm text-slate-500 mt-0.5\">处理客户补货订单 · 0 个待发货</p> aka getByText('处理客户补货订单 · 0 个待发货')\n    2) <uni-button id=\"\" class=\"px-4 py-2 rounded-xl text-sm font-bold transition-all bg-amber-500 text-white shadow-lg\"> 待发货 </uni-button> aka getByText('待发货', { exact: true })\n    3) <p class=\"text-slate-500 font-medium\">暂无待发货订单</p> aka getByText('暂无待发货订单')\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByText('待发货')\u001b[22m\n",
+                        "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByText('待发货')\nExpected: visible\nError: strict mode violation: getByText('待发货') resolved to 3 elements:\n    1) <p class=\"text-sm text-slate-500 mt-0.5\">处理客户补货订单 · 0 个待发货</p> aka getByText('处理客户补货订单 · 0 个待发货')\n    2) <uni-button id=\"\" class=\"px-4 py-2 rounded-xl text-sm font-bold transition-all bg-amber-500 text-white shadow-lg\"> 待发货 </uni-button> aka getByText('待发货', { exact: true })\n    3) <p class=\"text-slate-500 font-medium\">暂无待发货订单</p> aka getByText('暂无待发货订单')\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByText('待发货')\u001b[22m\n\n    at /Users/blair/HealthCare/Healthcare2.0/health-pro-mp/tests/orders.spec.ts:25:24",
+                        "location": {
+                          "file": "/Users/blair/HealthCare/Healthcare2.0/health-pro-mp/tests/orders.spec.ts",
+                          "column": 24,
+                          "line": 25
+                        },
+                        "snippet": "  23 |     const tab3 = page.getByText('已完成');\n  24 |     \n> 25 |     await expect(tab1).toBeVisible();\n     |                        ^\n  26 |     await expect(tab2).toBeVisible();\n  27 |     await expect(tab3).toBeVisible();\n  28 |     console.log('3个标签都可见');"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "/Users/blair/HealthCare/Healthcare2.0/health-pro-mp/tests/orders.spec.ts",
+                            "column": 24,
+                            "line": 25
+                          },
+                          "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByText('待发货')\nExpected: visible\nError: strict mode violation: getByText('待发货') resolved to 3 elements:\n    1) <p class=\"text-sm text-slate-500 mt-0.5\">处理客户补货订单 · 0 个待发货</p> aka getByText('处理客户补货订单 · 0 个待发货')\n    2) <uni-button id=\"\" class=\"px-4 py-2 rounded-xl text-sm font-bold transition-all bg-amber-500 text-white shadow-lg\"> 待发货 </uni-button> aka getByText('待发货', { exact: true })\n    3) <p class=\"text-slate-500 font-medium\">暂无待发货订单</p> aka getByText('暂无待发货订单')\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByText('待发货')\u001b[22m\n\n\n  23 |     const tab3 = page.getByText('已完成');\n  24 |     \n> 25 |     await expect(tab1).toBeVisible();\n     |                        ^\n  26 |     await expect(tab2).toBeVisible();\n  27 |     await expect(tab3).toBeVisible();\n  28 |     console.log('3个标签都可见');\n    at /Users/blair/HealthCare/Healthcare2.0/health-pro-mp/tests/orders.spec.ts:25:24"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-11T23:03:53.857Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "/Users/blair/HealthCare/Healthcare2.0/health-pro-mp/test-results/orders-订单管理测试-管理员可以查看待发货订单-chromium/test-failed-1.png"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "/Users/blair/HealthCare/Healthcare2.0/health-pro-mp/test-results/orders-订单管理测试-管理员可以查看待发货订单-chromium/error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "/Users/blair/HealthCare/Healthcare2.0/health-pro-mp/tests/orders.spec.ts",
+                        "column": 24,
+                        "line": 25
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "de3f15501f825e0a6f88-6f726f6efbe7e35203d7",
+              "file": "orders.spec.ts",
+              "line": 15,
+              "column": 7
+            },
+            {
+              "title": "发货按钮可以点击",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 1,
+                      "status": "passed",
+                      "duration": 5611,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "没有待发货订单，跳过测试\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-11T23:03:53.848Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "de3f15501f825e0a6f88-c1a3b95849d89605626b",
+              "file": "orders.spec.ts",
+              "line": 31,
+              "column": 7
+            },
+            {
+              "title": "标签切换正常",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 2,
+                      "status": "failed",
+                      "duration": 6040,
+                      "error": {
+                        "message": "Error: locator.click: Error: strict mode violation: getByText('待发货') resolved to 2 elements:\n    1) <p class=\"text-sm text-slate-500 mt-0.5\">处理客户补货订单 · 0 个待发货</p> aka getByText('处理客户补货订单 · 0 个待发货')\n    2) <uni-button id=\"\" class=\"px-4 py-2 rounded-xl text-sm font-bold transition-all bg-slate-100 text-slate-600 hover:bg-slate-200\"> 待发货 </uni-button> aka getByText('待发货', { exact: true })\n\nCall log:\n\u001b[2m  - waiting for getByText('待发货')\u001b[22m\n",
+                        "stack": "Error: locator.click: Error: strict mode violation: getByText('待发货') resolved to 2 elements:\n    1) <p class=\"text-sm text-slate-500 mt-0.5\">处理客户补货订单 · 0 个待发货</p> aka getByText('处理客户补货订单 · 0 个待发货')\n    2) <uni-button id=\"\" class=\"px-4 py-2 rounded-xl text-sm font-bold transition-all bg-slate-100 text-slate-600 hover:bg-slate-200\"> 待发货 </uni-button> aka getByText('待发货', { exact: true })\n\nCall log:\n\u001b[2m  - waiting for getByText('待发货')\u001b[22m\n\n    at /Users/blair/HealthCare/Healthcare2.0/health-pro-mp/tests/orders.spec.ts:66:22",
+                        "location": {
+                          "file": "/Users/blair/HealthCare/Healthcare2.0/health-pro-mp/tests/orders.spec.ts",
+                          "column": 22,
+                          "line": 66
+                        },
+                        "snippet": "  64 |     \n  65 |     // 回到待发货标签\n> 66 |     await tabPending.click();\n     |                      ^\n  67 |     await page.waitForTimeout(300);\n  68 |     console.log('点击待发货标签成功');\n  69 |     "
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "/Users/blair/HealthCare/Healthcare2.0/health-pro-mp/tests/orders.spec.ts",
+                            "column": 22,
+                            "line": 66
+                          },
+                          "message": "Error: locator.click: Error: strict mode violation: getByText('待发货') resolved to 2 elements:\n    1) <p class=\"text-sm text-slate-500 mt-0.5\">处理客户补货订单 · 0 个待发货</p> aka getByText('处理客户补货订单 · 0 个待发货')\n    2) <uni-button id=\"\" class=\"px-4 py-2 rounded-xl text-sm font-bold transition-all bg-slate-100 text-slate-600 hover:bg-slate-200\"> 待发货 </uni-button> aka getByText('待发货', { exact: true })\n\nCall log:\n\u001b[2m  - waiting for getByText('待发货')\u001b[22m\n\n\n  64 |     \n  65 |     // 回到待发货标签\n> 66 |     await tabPending.click();\n     |                      ^\n  67 |     await page.waitForTimeout(300);\n  68 |     console.log('点击待发货标签成功');\n  69 |     \n    at /Users/blair/HealthCare/Healthcare2.0/health-pro-mp/tests/orders.spec.ts:66:22"
+                        }
+                      ],
+                      "stdout": [
+                        {
+                          "text": "点击已发货标签成功\n"
+                        },
+                        {
+                          "text": "点击已完成标签成功\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-11T23:03:53.830Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "/Users/blair/HealthCare/Healthcare2.0/health-pro-mp/test-results/orders-订单管理测试-标签切换正常-chromium/test-failed-1.png"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "/Users/blair/HealthCare/Healthcare2.0/health-pro-mp/test-results/orders-订单管理测试-标签切换正常-chromium/error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "/Users/blair/HealthCare/Healthcare2.0/health-pro-mp/tests/orders.spec.ts",
+                        "column": 22,
+                        "line": 66
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "de3f15501f825e0a6f88-956329c0bc5c07f5d968",
+              "file": "orders.spec.ts",
+              "line": 49,
+              "column": 7
+            }
+          ]
+        },
+        {
+          "title": "库存管理测试",
+          "file": "orders.spec.ts",
+          "line": 75,
+          "column": 6,
+          "specs": [
+            {
+              "title": "客户可以查看库存列表",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 3,
+                      "status": "passed",
+                      "duration": 1402,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-11T23:03:53.839Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "de3f15501f825e0a6f88-eba590058627a2a9bea0",
+              "file": "orders.spec.ts",
+              "line": 81,
+              "column": 7
+            },
+            {
+              "title": "可以添加补货订单",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 4,
+                      "parallelIndex": 4,
+                      "status": "passed",
+                      "duration": 2592,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "未找到补货按钮，跳过测试\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-04-11T23:03:53.834Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "de3f15501f825e0a6f88-65bf4636c1b90718ab7e",
+              "file": "orders.spec.ts",
+              "line": 96,
+              "column": 7
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-04-11T23:03:53.424Z",
+    "duration": 6626.066,
+    "expected": 3,
+    "skipped": 0,
+    "unexpected": 2,
+    "flaky": 0
+  }
+}

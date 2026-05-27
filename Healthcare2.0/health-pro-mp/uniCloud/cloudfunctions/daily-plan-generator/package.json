@@ -1,0 +1,1 @@
+{"name": "daily-plan-generator", "version": "1.0.0", "main": "index.js", "description": "每日自动生成计划 - 凌晨3点为所有有活跃方案的客户生成当日打卡计划", "triggers": [{"name": "generateDailyPlans", "type": "timer", "config": "0 3 * * *"}]}

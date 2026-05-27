@@ -1,0 +1,25 @@
+{
+  "bsonType": "object",
+  "required": ["product_id", "name", "unit", "icon"],
+  "permission": {
+    "read": true,
+    "create": "auth.role == 'admin'",
+    "update": "auth.role == 'admin'",
+    "delete": "auth.role == 'admin'"
+  },
+  "properties": {
+    "_id": { "description": "ID" },
+    "product_id": { "bsonType": "string", "description": "商品唯一编码" },
+    "name": { "bsonType": "string", "description": "产品名称" },
+    "unit": { "bsonType": "string", "description": "单位" },
+    "icon": { "bsonType": "string", "description": "图标" },
+    "description": { "bsonType": "string", "description": "描述" },
+    "category": { "bsonType": "string", "description": "分类" },
+    "price": { "bsonType": "double", "description": "价格" },
+    "stock": { "bsonType": "int", "description": "总库存" },
+    "capacity": { "bsonType": "int", "description": "容量" },
+    "sub_unit": { "bsonType": "string", "description": "子单位" },
+    "daily_usage": { "bsonType": "int", "description": "日用量" },
+    "created_at": { "bsonType": "timestamp", "defaultValue": { "$env": "now" } }
+  }
+}

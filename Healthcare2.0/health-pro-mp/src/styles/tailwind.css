@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .mp-pressable {
+    transition: transform 0.2s ease, background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, color 0.2s ease;
+    transform: translateY(0) scale(1);
+  }
+
+  .mp-pressable:active {
+    transform: translateY(1px) scale(0.97);
+  }
+
+  .mp-action-chip {
+    height: 28px;
+    padding: 0 10px;
+    border-radius: 10px;
+    border: 1px solid rgb(226 232 240 / 0.85);
+    background: rgb(241 245 249);
+    box-shadow: 0 1px 2px rgb(148 163 184 / 0.28);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .mp-action-chip--active {
+    border-color: rgb(167 243 208);
+    background: rgb(236 253 245);
+    box-shadow: 0 1px 3px rgb(16 185 129 / 0.25);
+  }
+
+  .mp-chevron {
+    font-size: 12px;
+    font-weight: 700;
+    color: rgb(100 116 139);
+    transition: transform 0.3s ease, color 0.2s ease;
+    transform: rotate(0deg);
+  }
+
+  .mp-chevron--active {
+    color: rgb(5 150 105);
+    transform: rotate(180deg);
+  }
+
+  .mp-nav-row {
+    padding: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    transition: background-color 0.2s ease, transform 0.2s ease;
+  }
+
+  .mp-nav-row:active {
+    background: rgb(248 250 252);
+    transform: translateY(1px);
+  }
+}
