@@ -7,7 +7,7 @@ import autoprefixer from 'autoprefixer';
 export default defineConfig({
   plugins: [
     uni(),
-    uvwt()
+    uvwt(),
   ],
   css: {
     postcss: {
@@ -19,12 +19,5 @@ export default defineConfig({
   },
   server: {
     port: 3000,
-    proxy: {
-      '/cloud-api': {
-        target: 'https://env-00jy5xpjho0v.api-hz.cloudbasefunction.cn',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/cloud-api/, '')
-      }
-    }
   },
 });

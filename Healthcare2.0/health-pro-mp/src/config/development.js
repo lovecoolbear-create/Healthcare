@@ -2,31 +2,20 @@
 export const isDevelopment = process.env.NODE_ENV === 'development'
 
 export const devConfig = {
-  // WebSocket配置
   websocket: {
-    // 开发模式下禁用真实WebSocket连接
     disableRealConnection: isDevelopment,
-    // 模拟响应延迟
     mockResponseDelay: 1000,
-    // 重试次数
     maxRetries: isDevelopment ? 1 : 3
   },
   
-  // 错误处理
   errorHandling: {
-    // 开发模式下抑制WebSocket错误
     suppressWebsocketErrors: isDevelopment,
-    // 显示详细错误信息
     showDetailedErrors: isDevelopment,
-    // 自动重试
     autoRetry: !isDevelopment
   },
 
-  // 日志配置
   logging: {
-    // 开发模式下显示所有日志
     verbose: isDevelopment,
-    // 过滤的错误类型
     filterErrors: ['WebSocket connection failed', 'closeSocket:fail', 'timeout']
   }
 }

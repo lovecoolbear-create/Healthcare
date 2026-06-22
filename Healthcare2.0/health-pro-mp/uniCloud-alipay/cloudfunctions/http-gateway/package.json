@@ -1,0 +1,6 @@
+{
+  "name": "http-gateway",
+  "version": "1.0.0",
+  "description": "HTTP 网关云函数 - 为 H5 浏览器模式提供 HTTP 访问入口，在服务端转发 uniCloud.callFunction 调用",
+  "main": "index.js"
+}
