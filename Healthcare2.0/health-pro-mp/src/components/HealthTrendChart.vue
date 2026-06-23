@@ -128,6 +128,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
+import { callCloud } from '@/utils/cloud';
 
 const props = defineProps<{
   clientId: string
@@ -294,17 +295,14 @@ const fetchTrendData = async () => {
   const { startDate, endDate } = getDateRange(currentPeriod.value);
   
   try {
-    const res = await uniCloud.callFunction({
-      name: 'client-api',
-      data: {
-        action: 'getHealthLogRange',
-        payload: { userId: props.clientId, type: currentMetric.value, startDate, endDate }
-      }
+    const res = await callCloud('client-api', {
+      action: 'getHealthLogRange',
+      payload: { userId: props.clientId, type: currentMetric.value, startDate, endDate }
     });
-    
-    if (res.result.code === 0) {
-      let logs = res.result.data || [];
-      const bandsData = res.result.protocolBands || [];
+
+    if (res.code === 0) {
+      let logs = res.data || [];
+      const bandsData = res.protocolBands || [];
       const parsedBands = generateChartBands(bandsData, startDate, endDate);
       
       logs = aggregateData(logs, currentPeriod.value);

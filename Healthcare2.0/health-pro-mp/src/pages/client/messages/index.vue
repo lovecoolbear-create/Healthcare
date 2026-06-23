@@ -121,6 +121,7 @@
 
 <script setup lang="ts">
 import { getUserInfo } from '@/utils/storage';
+import { callCloud } from '@/utils/cloud';
 import { ref, computed } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import ClientTabBar from '@/components/ClientTabBar.vue'
@@ -196,15 +197,12 @@ const markInteractionsRead = async () => {
   const uid = uni.getStorageSync('userId') || getUserInfo()?._id || ''
   const token = uni.getStorageSync('token') || ''
   if (!uid) return
-  const { result } = await uniCloud.callFunction({
-    name: 'client-api',
-    data: {
-      action: 'markMyInteractionsRead',
-      payload: { userId: uid, token }
-    }
+  const res = await callCloud('client-api', {
+    action: 'markMyInteractionsRead',
+    payload: { userId: uid, token }
   })
-  if (result?.code === 0) {
-    const readAt = Number(result?.data?.readAt || Date.now())
+  if (res?.code === 0) {
+    const readAt = Number(res?.data?.readAt || Date.now())
     interactions.value = interactions.value.map((item: any) => (
       item?.sender_role === 'nutritionist' ? { ...item, read_at: readAt } : item
     ))
@@ -221,15 +219,12 @@ const fetchInteractions = async () => {
   }
   loading.value = true
   try {
-    const { result } = await uniCloud.callFunction({
-      name: 'client-api',
-      data: {
-        action: 'getMyInteractionLogs',
-        payload: { userId: uid, token }
-      }
+    const res = await callCloud('client-api', {
+      action: 'getMyInteractionLogs',
+      payload: { userId: uid, token }
     })
-    if (result?.code === 0 && Array.isArray(result.data)) {
-      interactions.value = result.data
+    if (res?.code === 0 && Array.isArray(res.data)) {
+      interactions.value = res.data
       try {
         await markInteractionsRead()
       } catch (error) {
@@ -237,8 +232,8 @@ const fetchInteractions = async () => {
       }
     } else {
       interactions.value = []
-      if (result?.code !== 0 && result?.msg) {
-        uni.showToast({ title: result.msg, icon: 'none' })
+      if (res?.code !== 0 && res?.msg) {
+        uni.showToast({ title: res.msg, icon: 'none' })
       }
     }
   } catch (err) {
@@ -258,15 +253,12 @@ const fetchNotifications = async () => {
     return
   }
   try {
-    const { result } = await uniCloud.callFunction({
-      name: 'client-api',
-      data: {
-        action: 'getNotifications',
-        payload: { userId: uid, limit: 20, token }
-      }
+    const res = await callCloud('client-api', {
+      action: 'getNotifications',
+      payload: { userId: uid, limit: 20, token }
     })
-    if (result?.code === 0 && Array.isArray(result.data)) {
-      notifications.value = result.data
+    if (res?.code === 0 && Array.isArray(res.data)) {
+      notifications.value = res.data
       return
     }
     notifications.value = []
@@ -280,14 +272,11 @@ const markNotificationRead = async (notificationId: string) => {
   const uid = uni.getStorageSync('userId') || getUserInfo()?._id || ''
   const token = uni.getStorageSync('token') || ''
   if (!uid || !notificationId) return
-  const { result } = await uniCloud.callFunction({
-    name: 'client-api',
-    data: {
-      action: 'markNotificationRead',
-      payload: { userId: uid, notificationId, token }
-    }
+  const res = await callCloud('client-api', {
+    action: 'markNotificationRead',
+    payload: { userId: uid, notificationId, token }
   })
-  if (result?.code === 0) {
+  if (res?.code === 0) {
     notifications.value = notifications.value.map((item: any) => (
       item?._id === notificationId ? { ...item, read_at: Date.now() } : item
     ))
@@ -302,15 +291,12 @@ const markAllNotificationsRead = async () => {
     if (!uid) return
 
     // 调用批量标记已读的API
-    const { result } = await uniCloud.callFunction({
-      name: 'client-api',
-      data: {
-        action: 'markAllNotificationsRead',
-        payload: { userId: uid, token }
-      }
+    const res = await callCloud('client-api', {
+      action: 'markAllNotificationsRead',
+      payload: { userId: uid, token }
     })
 
-    if (result?.code === 0) {
+    if (res?.code === 0) {
       // 更新本地状态：将所有通知标记为已读
       notifications.value = notifications.value.map((item: any) => ({
         ...item,
@@ -349,20 +335,17 @@ const sendMessage = async () => {
   sending.value = true
   const content = draftMessage.value.trim()
   try {
-    const { result } = await uniCloud.callFunction({
-      name: 'client-api',
-      data: {
-        action: 'addMyInteractionLog',
-        payload: {
-          userId: uid,
-          token,
-          content,
-          type: 'app'
-        }
+    const res = await callCloud('client-api', {
+      action: 'addMyInteractionLog',
+      payload: {
+        userId: uid,
+        token,
+        content,
+        type: 'app'
       }
     })
-    if (result?.code !== 0) {
-      uni.showToast({ title: result?.msg || '发送失败', icon: 'none' })
+    if (res?.code !== 0) {
+      uni.showToast({ title: res?.msg || '发送失败', icon: 'none' })
       return
     }
     interactions.value.push({

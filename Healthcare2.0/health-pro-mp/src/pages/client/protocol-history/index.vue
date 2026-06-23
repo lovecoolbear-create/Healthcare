@@ -272,6 +272,7 @@
 
 <script setup lang="ts">
 import { getUserInfo } from '@/utils/storage';
+import { callCloud } from '@/utils/cloud';
 import { ref, onMounted, computed } from 'vue';
 import { onShow } from '@dcloudio/uni-app';
 
@@ -292,16 +293,13 @@ const fetchProtocolHistory = async () => {
   }
 
   try {
-    const { result } = await uniCloud.callFunction({
-      name: 'protocol-effectiveness',
-      data: {
-        action: 'getClientProtocolHistory',
-        payload: { userId }
-      }
+    const res = await callCloud('protocol-effectiveness', {
+      action: 'getClientProtocolHistory',
+      payload: { userId }
     });
 
-    if (result.code === 0) {
-      const protocols = result.data || [];
+    if (res.code === 0) {
+      const protocols = res.data || [];
       
       // 分离当前方案和即将生效的方案
       currentProtocol.value = protocols.find((p: any) => p.status === 'active') || null;

@@ -869,11 +869,8 @@ const handleSaveProduct = async () => {
       // 先测试简单的云函数调用
       console.log('🧪 测试云函数连接...');
       try {
-        const testResult = await uniCloud.callFunction({
-          name: 'client-api',
-          data: {
-            action: 'getProducts'
-          }
+        const testResult = await callCloud('client-api', {
+          action: 'getProducts'
         });
         console.log('🧪 测试调用结果:', testResult);
       } catch (testError) {

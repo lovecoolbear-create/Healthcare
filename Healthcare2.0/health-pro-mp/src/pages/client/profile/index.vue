@@ -64,6 +64,7 @@
 
 <script setup lang="ts">
 import { getUserInfo } from '@/utils/storage';
+import { callCloud } from '@/utils/cloud';
 import ClientTabBar from '@/components/ClientTabBar.vue'
 import { ref } from 'vue';
 import { onShow } from '@dcloudio/uni-app';
@@ -85,15 +86,12 @@ onShow(async () => {
     userInfo.value = info;
     // 获取最新用户信息
     try {
-      const { result } = await uniCloud.callFunction({
-        name: 'client-api',
-        data: {
-          action: 'getUserInfo',
-          payload: { userId: info._id }
-        }
+      const res = await callCloud('client-api', {
+        action: 'getUserInfo',
+        payload: { userId: info._id }
       });
-      if (result.code === 0 && result.data) {
-        userInfo.value = { ...info, ...result.data };
+      if (res.code === 0 && res.data) {
+        userInfo.value = { ...info, ...res.data };
         uni.setStorageSync('userInfo', userInfo.value);
       }
     } catch (e) {

@@ -258,6 +258,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
+import { callCloud } from '@/utils/cloud';
 import ClientTabBar from '@/components/ClientTabBar.vue'
 import { onShow } from '@dcloudio/uni-app';
 
@@ -422,22 +423,19 @@ const fetchTrendData = async () => {
   const { startDate, endDate } = getDateRange(currentPeriod.value);
   
   try {
-    const res = await uniCloud.callFunction({
-      name: 'client-api',
-      data: {
-        action: 'getHealthLogRange',
-        payload: { userId: currentUserId, token, type: currentMetric.value, startDate, endDate }
-      }
+    const res = await callCloud('client-api', {
+      action: 'getHealthLogRange',
+      payload: { userId: currentUserId, token, type: currentMetric.value, startDate, endDate }
     });
-    
-    if (res.result.code === 0) {
-      let logs = res.result.data || [];
-      
+
+    if (res.code === 0) {
+      let logs = res.data || [];
+
       // Aggregate for Yearly view
       logs = aggregateData(logs, currentPeriod.value);
-      
+
       const chartData = generateChartPath(logs, startDate, endDate);
-      
+
       let currentVal = logs.length > 0 ? Number(logs[logs.length - 1].value) : 0;
       let prevVal = logs.length > 1 ? Number(logs[0].value) : currentVal;
       let trendVal = Number((currentVal - prevVal).toFixed(1));
@@ -448,7 +446,7 @@ const fetchTrendData = async () => {
         trend: trendVal
       };
     } else {
-      console.error('getHealthLogRange error:', res.result);
+      console.error('getHealthLogRange error:', res);
     }
   } catch (err) {
     console.error(err);
@@ -467,34 +465,31 @@ const fetchWaterData = async () => {
   const { startDate, endDate } = getDateRange(currentPeriod.value);
   
   try {
-    const res = await uniCloud.callFunction({
-      name: 'client-api',
-      data: {
-        action: 'getWaterLogRange',
-        payload: { userId: currentUserId, token, startDate, endDate }
-      }
+    const res = await callCloud('client-api', {
+      action: 'getWaterLogRange',
+      payload: { userId: currentUserId, token, startDate, endDate }
     });
-    
-    if (res.result.code === 0) {
-      let logs = res.result.data || [];
-      
+
+    if (res.code === 0) {
+      let logs = res.data || [];
+
       // Calculate avg before aggregation (more accurate on daily data)
       const total = logs.reduce((acc: number, cur: any) => acc + (Number(cur.value) || 0), 0);
       const avg = logs.length > 0 ? (total / logs.length).toFixed(1) : '0.0';
-      
+
       // Aggregate for chart
       logs = aggregateData(logs, currentPeriod.value);
-      
+
       const chartData = generateChartPath(logs, startDate, endDate, 100, 50);
       const current = logs.length > 0 ? Number(logs[logs.length - 1].value) : 0;
-      
+
       waterData.value = {
         ...chartData,
         currentValue: current,
         avgValue: avg
       };
     } else {
-      console.error('getWaterLogRange error:', res.result);
+      console.error('getWaterLogRange error:', res);
     }
   } catch (err) {
     console.error('Water data fetch failed', err);
@@ -590,17 +585,14 @@ const fetchProtocolPhases = async () => {
   const { startDate, endDate } = getDateRange(currentPeriod.value);
   
   try {
-    const { result } = await uniCloud.callFunction({
-      name: 'protocol-effectiveness',
-      data: {
-        action: 'getProtocolPhasesInRange',
-        payload: { userId: currentUserId, token, startDate, endDate }
-      }
+    const res = await callCloud('protocol-effectiveness', {
+      action: 'getProtocolPhasesInRange',
+      payload: { userId: currentUserId, token, startDate, endDate }
     });
-    
-    if (result.code === 0 && result.data) {
+
+    if (res.code === 0 && res.data) {
       // 为每个阶段分配颜色
-      protocolPhases.value = result.data.map((phase: any, idx: number) => ({
+      protocolPhases.value = res.data.map((phase: any, idx: number) => ({
         name: phase.name,
         start: phase.start_date,
         end: phase.end_date || new Date().toISOString().split('T')[0],
@@ -706,12 +698,9 @@ const fetchUserTargets = async () => {
   const token = uni.getStorageSync('token');
   if (!token) return;
   try {
-    const res = await uniCloud.callFunction({
-      name: 'client-api',
-      data: { action: 'getUserInfo', token }
-    });
-    if (res.result.code === 0 && res.result.data) {
-      const targets = res.result.data.health_targets;
+    const res = await callCloud('client-api', { action: 'getUserInfo', token });
+    if (res.code === 0 && res.data) {
+      const targets = res.data.health_targets;
       if (targets) {
         metrics.value.forEach(m => {
           if (m.key === 'weight' && targets.weight) m.target = targets.weight;

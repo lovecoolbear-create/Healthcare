@@ -415,6 +415,7 @@ import type { HealthStatus } from '@/utils/healthEvaluation';
 // 【新增】导入优化后的工具和类型
 import logger from '@/utils/logger';
 import apiService from '@/composables/useApi';
+import { callCloud } from '@/utils/cloud';
 import { useTimers } from '@/composables/useTimers';
 import { POINTS, TIME_SLOTS, SLOT_MAP, SYMPTOM_OPTIONS, API_CONFIG, INVENTORY } from '@/config/constants';
 import type {
@@ -819,12 +820,11 @@ const fetchDailyData = async (force = false) => {
     while (retryCount < maxRetries) {
       try {
         logger.debug(`getUserInfo attempt ${retryCount + 1}/${maxRetries}`);
-        userRes = await uniCloud.callFunction({
-          name: 'client-api',
-          data: { action: 'getUserInfo', payload: { userId: userIdForInfo, token: tokenForInfo, forceRefresh: true } }
+        userRes = await callCloud('client-api', {
+          action: 'getUserInfo', payload: { userId: userIdForInfo, token: tokenForInfo, forceRefresh: true }
         });
-        logger.debug('getUserInfo response:', userRes.result);
-        if (userRes.result.code === 0) break;
+        logger.debug('getUserInfo response:', userRes);
+        if (userRes.code === 0) break;
       } catch (e) {
         logger.error(`getUserInfo attempt ${retryCount + 1} failed:`, e);
       }
@@ -833,9 +833,9 @@ const fetchDailyData = async (force = false) => {
         await new Promise(resolve => setTimeout(resolve, 500));
       }
     }
-    
-    if (userRes && userRes.result.code === 0 && userRes.result.data) {
-      const u = userRes.result.data;
+
+    if (userRes && userRes.code === 0 && userRes.data) {
+      const u = userRes.data;
       logger.debug('用户数据加载完成:', { streak_days: u.streak_days, points: u.points });
 
       // 【关键修复】计算本地积分，防止服务端返回0时覆盖本地计算值
@@ -919,29 +919,26 @@ const generateTodayPlan = async () => {
   
   try {
     logger.debug('开始生成今日计划...');
-    const res = await uniCloud.callFunction({
-      name: 'client-api',
-      data: {
-        action: 'generateDailyPlan',
-        payload: { 
-          user_id: userId,
-          date: dateStr.value,
-          merge_same_products: true,
-          token
-        }
+    const res = await callCloud('client-api', {
+      action: 'generateDailyPlan',
+      payload: {
+        user_id: userId,
+        date: dateStr.value,
+        merge_same_products: true,
+        token
       }
     });
-    logger.debug('generateTodayPlan response:', res.result);
-    
-    if (res.result.code === 0) {
+    logger.debug('generateTodayPlan response:', res);
+
+    if (res.code === 0) {
       uni.showToast({ title: '生成成功', icon: 'success' });
       // 刷新数据
       await fetchDailyData();
-      
+
       // --- Sync to Backend ---
       await syncData();
     } else {
-      uni.showToast({ title: res.result.msg || '生成失败', icon: 'none' });
+      uni.showToast({ title: res.msg || '生成失败', icon: 'none' });
     }
   } catch (error) {
     logger.error('generateTodayPlan error:', error);
@@ -1035,17 +1032,14 @@ const updateWater = async (amount: number) => {
     
     // Debounce or immediate save? Water is frequent, maybe immediate is okay for now.
     try {
-      const res = await uniCloud.callFunction({
-        name: 'client-api',
-        data: {
-          action: 'updateWaterIntake',
-          payload: { userId: userIdForWater, date: dateStr.value, waterIntake: newValue, token: tokenForWater }
-        }
+      const res = await callCloud('client-api', {
+        action: 'updateWaterIntake',
+        payload: { userId: userIdForWater, date: dateStr.value, waterIntake: newValue, token: tokenForWater }
       });
-      
+
       // 同步服务端返回的积分
-      if (res.result?.code === 0 && res.result?.data?.points !== undefined) {
-        userInfo.value.points = res.result.data.points;
+      if (res?.code === 0 && res?.data?.points !== undefined) {
+        userInfo.value.points = res.data.points;
       }
     } catch (e) {
       logger.error(e);
@@ -1121,22 +1115,19 @@ const syncSectionStatus = async () => {
     };
     
     logger.debug('[syncSectionStatus] Syncing:', sectionStatus);
-    
-    await uniCloud.callFunction({
-      name: 'client-api',
-      data: {
-        action: 'updateDailyPlanTasks',
-        payload: {
-          userId,
-          date: dateStr.value,
-          tasks: allTasks,
-          water_intake: waterIntake.value,
-          water_target: POINTS.WATER_TARGET,
-          health_metrics: metrics.value,
-          symptoms: symptoms.value,
-          section_status: sectionStatus,
-          token
-        }
+
+    await callCloud('client-api', {
+      action: 'updateDailyPlanTasks',
+      payload: {
+        userId,
+        date: dateStr.value,
+        tasks: allTasks,
+        water_intake: waterIntake.value,
+        water_target: POINTS.WATER_TARGET,
+        health_metrics: metrics.value,
+        symptoms: symptoms.value,
+        section_status: sectionStatus,
+        token
       }
     });
     
@@ -1489,33 +1480,30 @@ const toggleTask = async (item: any) => {
   // We need to call a new action `updateDailyPlanTasks`
   try {
     logger.debug('Sending task update, allTasks:', allTasks.length, 'completed:', allTasks.filter(t => t.completed).length);
-    const res = await uniCloud.callFunction({
-      name: 'client-api',
-      data: {
-        action: 'updateDailyPlanTasks',
-        payload: { 
-          userId: userIdForCheckIn, 
-          date: dateStr.value, 
-          tasks: allTasks, 
-          token: tokenForCheckIn,
-          water_intake: waterIntake.value,
-          water_target: POINTS.WATER_TARGET,
-          health_metrics: metrics.value,
-          symptoms: symptoms.value,
-          section_status: sectionStatus
-        }
+    const res = await callCloud('client-api', {
+      action: 'updateDailyPlanTasks',
+      payload: {
+        userId: userIdForCheckIn,
+        date: dateStr.value,
+        tasks: allTasks,
+        token: tokenForCheckIn,
+        water_intake: waterIntake.value,
+        water_target: POINTS.WATER_TARGET,
+        health_metrics: metrics.value,
+        symptoms: symptoms.value,
+        section_status: sectionStatus
       }
     });
-    
-    logger.debug('Server response:', res.result);
+
+    logger.debug('Server response:', res);
 
     // 服务端返回的 points/streak_days 仅用于回写数据库供顾问端读取
     // 客户端显示始终以 localTotalPoints/localStreakDays 为准，不覆盖
-    if (res.result.code === 0 && res.result.data) {
+    if (res.code === 0 && res.data) {
       lastSyncStatus.value = { time: new Date().toISOString(), success: true };
       logger.debug('Sync status updated');
     } else {
-      logger.warn('Server returned no data or error:', res.result);
+      logger.warn('Server returned no data or error:', res);
       lastSyncStatus.value = { time: new Date().toISOString(), success: false };
     }
   } catch (e) {
@@ -1809,24 +1797,21 @@ const saveMetric = async (metric: any) => {
   const tokenForMetric = getToken();
   
   try {
-    const res = await uniCloud.callFunction({
-      name: 'client-api',
-      data: {
-        action: 'updateHealthMetric',
-        payload: { 
-          userId: userIdForMetric, 
-          date: dateStr.value, 
-          type: metric.type,
-          value: parseFloat(metric.value),
-          unit: metric.unit,
-          token: tokenForMetric
-        }
+    const res = await callCloud('client-api', {
+      action: 'updateHealthMetric',
+      payload: {
+        userId: userIdForMetric,
+        date: dateStr.value,
+        type: metric.type,
+        value: parseFloat(metric.value),
+        unit: metric.unit,
+        token: tokenForMetric
       }
     });
-    
+
     // 同步服务端返回的积分
-    if (res.result?.code === 0 && res.result?.data?.points !== undefined) {
-      userInfo.value.points = res.result.data.points;
+    if (res?.code === 0 && res?.data?.points !== undefined) {
+      userInfo.value.points = res.data.points;
     }
   } catch (e) { 
     logger.error(e);
@@ -1912,28 +1897,25 @@ const saveSymptoms = async () => {
   };
   
   try {
-    const res = await uniCloud.callFunction({
-      name: 'client-api',
-      data: {
-        action: 'updateSymptoms',
-        payload: {
-          userId: userIdForSymptoms,
-          date: dateStr.value,
-          symptoms: symptoms.value.map(s => ({ 
-            key: s.key, // Standard English key for WROM calc
-            label: s.label, 
-            value: s.value 
-          })),
-          symptomNotes: symptomNotes.value,
-          section_status: sectionStatus, // 【关键】同时传递 section_status
-          token: tokenForSymptoms
-        }
+    const res = await callCloud('client-api', {
+      action: 'updateSymptoms',
+      payload: {
+        userId: userIdForSymptoms,
+        date: dateStr.value,
+        symptoms: symptoms.value.map(s => ({
+          key: s.key, // Standard English key for WROM calc
+          label: s.label,
+          value: s.value
+        })),
+        symptomNotes: symptomNotes.value,
+        section_status: sectionStatus, // 【关键】同时传递 section_status
+        token: tokenForSymptoms
       }
     });
-    
+
     // 同步服务端返回的积分
-    if (res.result?.code === 0 && res.result?.data?.points !== undefined) {
-      userInfo.value.points = res.result.data.points;
+    if (res?.code === 0 && res?.data?.points !== undefined) {
+      userInfo.value.points = res.data.points;
     }
   } catch (e) { 
     logger.error(e);
@@ -2058,37 +2040,34 @@ const syncData = async () => {
 
     // 3. 【关键】一次性提交所有数据到云端（任务、饮水、体感、健康指标）
     logger.debug('[syncData] 开始完整同步，日期:', dateStr.value, '任务数:', allTasks.length);
-    const res = await uniCloud.callFunction({
-      name: 'client-api',
-      data: {
-        action: 'updateDailyPlanTasks',
-        payload: {
-          userId,
-          date: dateStr.value,
-          tasks: allTasks,
-          water_intake: waterIntake.value,
-          water_target: POINTS.WATER_TARGET,
-          health_metrics: metrics.value,
-          symptoms: symptoms.value,
-          symptom_notes: symptomNotes.value,
-          section_status: sectionStatus,
-          is_final_sync: true,
-          client_points: localTotalPoints.value,
-          client_streak_days: localStreakDays.value,
-          token
-        }
+    const res = await callCloud('client-api', {
+      action: 'updateDailyPlanTasks',
+      payload: {
+        userId,
+        date: dateStr.value,
+        tasks: allTasks,
+        water_intake: waterIntake.value,
+        water_target: POINTS.WATER_TARGET,
+        health_metrics: metrics.value,
+        symptoms: symptoms.value,
+        symptom_notes: symptomNotes.value,
+        section_status: sectionStatus,
+        is_final_sync: true,
+        client_points: localTotalPoints.value,
+        client_streak_days: localStreakDays.value,
+        token
       }
     });
 
-    logger.debug('[syncData] 同步结果:', res.result);
+    logger.debug('[syncData] 同步结果:', res);
 
-    if (res.result?.code === 0) {
+    if (res?.code === 0) {
       // 更新本地积分和连续天数
-      if (res.result.data?.points !== undefined) {
-        userInfo.value.points = res.result.data.points;
+      if (res.data?.points !== undefined) {
+        userInfo.value.points = res.data.points;
       }
-      if (res.result.data?.streak_days !== undefined) {
-        userInfo.value.streak_days = res.result.data.streak_days;
+      if (res.data?.streak_days !== undefined) {
+        userInfo.value.streak_days = res.data.streak_days;
       }
 
       // 更新同步状态
@@ -2100,7 +2079,7 @@ const syncData = async () => {
       uni.hideLoading();
       uni.showToast({ title: '今日数据已保存', icon: 'success' });
     } else {
-      throw new Error(res.result?.msg || '同步失败');
+      throw new Error(res?.msg || '同步失败');
     }
   } catch (err) {
     logger.error('[syncData] 同步错误:', err);
@@ -2141,23 +2120,20 @@ const syncTaskStatus = async (isFinalSync = false) => {
   logger.debug(`[syncTaskStatus] Syncing all tasks (final=${isFinalSync}):`, allTasks);
   
   try {
-    const res = await uniCloud.callFunction({
-      name: 'client-api',
-      data: {
-        action: 'updateDailyPlanTasks',
-        payload: {
-          userId,
-          date: dateStr.value,
-          tasks: allTasks,
-          token,
-          is_final_sync: isFinalSync // 【新增】最终同步标记
-        }
+    const res = await callCloud('client-api', {
+      action: 'updateDailyPlanTasks',
+      payload: {
+        userId,
+        date: dateStr.value,
+        tasks: allTasks,
+        token,
+        is_final_sync: isFinalSync // 【新增】最终同步标记
       }
     });
-    
-    logger.debug('[syncTaskStatus] Sync result:', res.result);
-    
-    if (res.result?.code === 0) {
+
+    logger.debug('[syncTaskStatus] Sync result:', res);
+
+    if (res?.code === 0) {
       if (isFinalSync) {
         uni.showToast({
           title: '今日打卡已完成',
@@ -2165,7 +2141,7 @@ const syncTaskStatus = async (isFinalSync = false) => {
         });
       }
     } else {
-      logger.error('[syncTaskStatus] Sync failed:', res.result?.msg);
+      logger.error('[syncTaskStatus] Sync failed:', res?.msg);
     }
   } catch (err) {
     logger.error('[syncTaskStatus] Error:', err);

@@ -128,6 +128,7 @@ import {
 } from 'lucide-vue-next';
 
 import { ref, onMounted } from 'vue';
+import { callCloud } from '@/utils/cloud';
 
 // Props definition
 const props = defineProps<{
@@ -145,15 +146,12 @@ const pendingOrderCount = ref(0);
 
 const fetchPendingOrderCount = async () => {
   try {
-    const res = await uniCloud.callFunction({
-      name: 'client-api',
-      data: {
-        action: 'getAdminOrders',
-        payload: { status: 0, limit: 1 }
-      }
+    const res = await callCloud('client-api', {
+      action: 'getAdminOrders',
+      payload: { status: 0, limit: 1 }
     });
-    if (res.result.code === 0) {
-      pendingOrderCount.value = res.result.data.length;
+    if (res.code === 0) {
+      pendingOrderCount.value = res.data.length;
     }
   } catch (error) {
     console.error('Failed to fetch pending orders:', error);

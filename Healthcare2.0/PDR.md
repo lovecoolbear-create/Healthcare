@@ -557,6 +557,30 @@ https://env-00jy5xpjho0v.dev-hz.cloudbasefunction.cn/http-gateway
 | **改完自测** | 涉及核心路径（如 cloud.ts、main.ts）的修改，必须确认 H5 和小程序两种模式都能正常运行 |
 | **不破坏已有功能** | 「优化」不能以牺牲「能用」为代价 |
 
+#### 6.2.3 已完成的修正清单（不可回退）
+
+以下修正是项目正常运行的**必要条件**，后续维护时不得移除或覆盖：
+
+| # | 修正项 | 文件 | 原因 |
+|---|--------|------|------|
+| 1 | **http-gateway 云函数** | `uniCloud-alipay/cloudfunctions/http-gateway/` | CLI 项目 H5 模式无法注入 uniCloud 配置，需 HTTP 网关转发 |
+| 2 | **cloud.ts 双模式调用** | `src/utils/cloud.ts` | H5 用 fetch+网关，小程序用 SDK；使用纯 const 内联常量 |
+| 3 | **AppID** | `manifest.json` → `__UNI__CE834E0` | 原 `__UNI__B01C681` 在 DCloud 服务器不存在 |
+| 4 | **删除 login-debug.vue** | 已删除 | 硬编码真实手机号和密码 `123456` |
+| 5 | **Gateway 鉴权** | http-gateway 的 API Key + 函数白名单 | 防止未授权访问云函数 |
+| 6 | **跨域配置** | 控制台 → 跨域配置 | 前端网页托管域名访问云函数域名需要 CORS 白名单 |
+| 7 | **user-center 输入校验** | `uniCloud-alipay/cloudfunctions/user-center/index.js` | action 白名单、手机号格式校验、密码长度限制 |
+
+#### 6.2.4 部署检查清单
+
+每次重新部署前端网页托管时必须执行：
+
+- [ ] `npm run build:h5` 构建成功
+- [ ] http-gateway 云函数已上传部署（最新版本含鉴权）
+- [ ] 构建产物上传到前端网页托管
+- [ ] 跨域白名单包含 `env-00jy5xpjho0v-static.normal.cloudstatic.cn`
+- [ ] 测试登录功能正常
+
 ---
 
 **PDR 维护原则**: 本文档作为 UI/UX 的"唯一真理来源" (Single Source of Truth)。任何 UI 变更需先更新本文档。

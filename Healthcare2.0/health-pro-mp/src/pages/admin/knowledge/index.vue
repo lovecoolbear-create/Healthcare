@@ -181,9 +181,9 @@ const submitForm = async () => {
       ? { ...form.value, userId: userInfo ? userInfo._id : '' }
       : { ...form.value, category: activeTab.value, tags: [], userId: userInfo ? userInfo._id : '' };
 
-    const { result } = await uniCloud.callFunction({
-      name: 'client-api',
-      data: { action, payload }
+    const { result } = await callCloud('client-api', {
+      action: action,
+      payload: payload
     });
 
     if (result.code === 0) {

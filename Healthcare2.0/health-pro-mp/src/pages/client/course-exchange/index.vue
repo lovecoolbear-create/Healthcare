@@ -133,6 +133,7 @@
 import { ref } from 'vue';
 import { onShow } from '@dcloudio/uni-app';
 import { getUserInfo } from '@/utils/storage';
+import { callCloud } from '@/utils/cloud';
 
 interface Course {
   _id: string;
@@ -202,27 +203,21 @@ const refreshData = async (userId: string) => {
     
     // 并行获取用户积分和课程列表
     const [userRes, courseRes] = await Promise.all([
-      uniCloud.callFunction({
-        name: 'client-api',
-        data: { action: 'getUserInfo', payload: { userId } }
-      }),
-      uniCloud.callFunction({
-        name: 'client-api',
-        data: { action: 'getCourses', payload: { userId } }
-      })
+      callCloud('client-api', { action: 'getUserInfo', payload: { userId } }),
+      callCloud('client-api', { action: 'getCourses', payload: { userId } })
     ]);
 
-    console.log('User response:', userRes.result);
-    console.log('Course response:', courseRes.result);
+    console.log('User response:', userRes);
+    console.log('Course response:', courseRes);
 
-    if (userRes.result.code === 0 && userRes.result.data) {
-      userPoints.value = userRes.result.data.points || 0;
+    if (userRes.code === 0 && userRes.data) {
+      userPoints.value = userRes.data.points || 0;
     }
 
-    if (courseRes.result.code === 0 && courseRes.result.data) {
-      courses.value = courseRes.result.data;
+    if (courseRes.code === 0 && courseRes.data) {
+      courses.value = courseRes.data;
       console.log('Courses loaded:', courses.value.length, 'courses');
-      
+
       // 更新缓存
       uni.setStorageSync(CACHE_KEY, {
         userId,
@@ -231,7 +226,7 @@ const refreshData = async (userId: string) => {
         timestamp: Date.now()
       });
     } else {
-      console.warn('Failed to load courses:', courseRes.result);
+      console.warn('Failed to load courses:', courseRes);
     }
   } catch (e) {
     console.error('Failed to refresh data:', e);
@@ -253,33 +248,30 @@ const doExchange = async (course: Course) => {
   
   try {
     const userInfo = getUserInfo();
-    const { result } = await uniCloud.callFunction({
-      name: 'client-api',
-      data: {
-        action: 'exchangeCourse',
-        payload: {
-          userId: userInfo._id,
-          courseId: course._id
-        }
+    const res = await callCloud('client-api', {
+      action: 'exchangeCourse',
+      payload: {
+        userId: userInfo._id,
+        courseId: course._id
       }
     });
 
     uni.hideLoading();
-    
-    if (result.code === 0) {
+
+    if (res.code === 0) {
       uni.showToast({ title: '兑换成功！', icon: 'success' });
       userPoints.value -= course.pointsRequired;
-      
+
       // 更新课程状态
       course.isExchanged = true;
-      course.ticketCode = result.data?.ticketCode;
-      
+      course.ticketCode = res.data?.ticketCode;
+
       await fetchData(true);
-      
+
       // 兑换成功，自动折叠
       expandedCourse.value = null;
     } else {
-      uni.showToast({ title: result.msg || '兑换失败', icon: 'none' });
+      uni.showToast({ title: res.msg || '兑换失败', icon: 'none' });
     }
   } catch (e) {
     uni.hideLoading();

@@ -466,18 +466,15 @@ const sendReminder = (item: any) => {
 // 发送推送通知
 const sendPushNotification = async (clientId: string, title: string, content: string) => {
   try {
-    await uniCloud.callFunction({
-      name: 'client-api',
-      data: {
-        action: 'sendPushNotification',
-        payload: {
-          clientId,
-          title,
-          content
-        }
+    await callCloud('client-api', {
+      action: 'sendPushNotification',
+      payload: {
+        clientId,
+        title,
+        content
       }
     })
-    
+
     uni.showToast({
       title: '提醒已发送',
       icon: 'success'
