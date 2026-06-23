@@ -1,6 +1,6 @@
 {
     "name" : "HealthCare Pro",
-    "appid" : "__UNI__B567890",
+    "appid" : "__UNI__CE834E0",
     "description" : "数字化营养与健康管理系统",
     "versionName" : "5.2.0",
     "versionCode" : "520",
@@ -42,33 +42,33 @@
     },
     "quickapp" : {},
     "mp-weixin" : {
-        "appid" : "wx57bf4a5a3831c239",
+        "appid" : "wxb1c8ae38f8f0b164",
         "setting" : {
             "urlCheck" : false
         },
         "usingComponents" : true,
-        "permission": {
-            "scope.userLocation": {
-                "desc": "你的位置信息将用于小程序位置接口的效果展示"
+        "permission" : {
+            "scope.userLocation" : {
+                "desc" : "你的位置信息将用于小程序位置接口的效果展示"
             }
         }
     },
-    "h5": {
-        "title": "HealthCare Pro Admin",
-        "router": {
-            "mode": "hash",
-            "base": "./"
+    "h5" : {
+        "title" : "HealthCare Pro Admin",
+        "router" : {
+            "mode" : "hash",
+            "base" : "./"
         },
-        "devServer": {
-            "port": 3000
+        "devServer" : {
+            "port" : 3000
         }
     },
-    "uniStatistics": {  
-        "enable": false
+    "uniStatistics" : {
+        "enable" : false
     },
     "vueVersion" : "3",
-    "uniCloud": {
-        "provider": "alipay",
-        "spaceId": "env-00jy5xpjho0v"
+    "uniCloud" : {
+        "provider" : "alipay",
+        "spaceId" : "env-00jy5xpjho0v"
     }
 }
