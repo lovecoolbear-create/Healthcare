@@ -1,6 +1,24 @@
 const db = uniCloud.database();
 const collection = db.collection('he_users');
 
+// ===== 输入校验工具 =====
+
+/** 校验手机号格式（中国大陆） */
+const isValidPhone = (phone) => {
+  if (typeof phone !== 'string') return false;
+  return /^1[3-9]\d{9}$/.test(phone.trim());
+};
+
+/** 清理字符串输入（去首尾空格、防 XSS） */
+const sanitizeStr = (input) => {
+  if (typeof input !== 'string') return '';
+  return input.trim().replace(/[<>\"\'&]/g, '');
+};
+
+/** 校验 action 是否在允许列表中 */
+const ALLOWED_ACTIONS = ['login', 'register', 'register_admin', 'getInfo', 'updateProfile', 'logout'];
+const isValidAction = (action) => typeof action === 'string' && ALLOWED_ACTIONS.includes(action);
+
 const hashPassword = (password) => {
   const salt = 'healthcare_salt_v1';
   let hash = 0;
@@ -30,10 +48,25 @@ exports.main = async (event, context) => {
     const action = event.action;
     const params = event.params || {};
 
+    // ===== 入口校验 =====
+    if (!isValidAction(action)) {
+      return { code: 400, msg: '无效的操作类型' };
+    }
+
+    if (typeof params !== 'object' || params === null) {
+      return { code: 400, msg: '参数格式错误' };
+    }
+
     if (action === 'login') {
       const { phone, password } = params;
       if (!phone || !password) {
         return { code: 400, msg: '手机号和密码不能为空' };
+      }
+      if (!isValidPhone(phone)) {
+        return { code: 400, msg: '手机号格式不正确' };
+      }
+      if (typeof password !== 'string' || password.length < 1 || password.length > 100) {
+        return { code: 400, msg: '密码长度不合法' };
       }
       const res = await collection.where({ phone: phone }).get();
       if (res.data.length === 0) {

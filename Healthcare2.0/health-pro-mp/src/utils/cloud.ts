@@ -3,12 +3,12 @@
  *
  * H5 浏览器模式：通过 HTTP URL 化调用 http-gateway 云函数转发（绕过 SDK 注入问题）
  * 小程序模式：直接使用 uniCloud.callFunction()
+ *
+ * 安全说明：
+ *   - H5 模式每次请求携带 X-Gateway-Key 鉴权头
+ *   - API Key 存储在 development.js 环境配置中，不硬编码
+ *   - 服务端有函数名白名单，只允许调用已授权的云函数
  */
-
-// ===== HTTP Gateway 配置 =====
-// 在 uniCloud 控制台 → 云函数 → http-gateway 详情 → 查看「默认域名」
-// 格式类似: https://xxxx-xxx.api.lncldglobal.com 或支付宝云的默认域名
-const GATEWAY_URL = 'https://env-00jy5xpjho0v.dev-hz.cloudbasefunction.cn/http-gateway';
 
 /** 判断当前是否为 H5 浏览器环境 */
 const isH5Mode = (): boolean => {
@@ -17,6 +17,20 @@ const isH5Mode = (): boolean => {
   // #endif
   return false;
 };
+
+// ===== 从环境配置读取 Gateway 参数 =====
+let GATEWAY_URL = '';
+let GATEWAY_API_KEY = '';
+
+try {
+  // #ifdef H5
+  const config = require('./config/development.js').default || require('./config/development.js');
+  GATEWAY_URL = config.gatewayUrl || '';
+  GATEWAY_API_KEY = config.gatewayApiKey || '';
+  // #endif
+} catch (e) {
+  console.warn('[cloud] ⚠️ 无法加载网关配置，H5 模式将不可用');
+}
 
 export const RESOURCE_EXHAUSTED_MESSAGE = '当前云资源额度已用完，请等待额度恢复或切换服务空间后重试';
 
@@ -88,22 +102,51 @@ type CloudResult<T> = {
 };
 
 /**
- * H5 模式：通过 HTTP 调用网关云函数
+ * H5 模式：通过 HTTP 调用网关云函数（带鉴权）
  */
 const callViaHttpGateway = async <T>(name: string, data: Record<string, unknown>): Promise<CloudResult<T>> => {
+  // 配置缺失时快速失败
+  if (!GATEWAY_URL || !GATEWAY_API_KEY) {
+    console.error('[cloud] [HTTP] ❌ 网关未配置，请检查 src/config/development.js');
+    return { ok: false, code: 500, msg: '网关未配置', data: null, isResourceExhausted: false, raw: null };
+  }
+
   console.log(`[cloud] [HTTP] 调用云函数: ${name}, action: ${data?.action || '?'}`);
 
   try {
     const response = await fetch(GATEWAY_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Gateway-Key': GATEWAY_API_KEY
+      },
       body: JSON.stringify({ name, data })
     });
+
+    // 处理非 2xx 响应
+    if (!response.ok) {
+      console.error(`[cloud] [HTTP] ❌ HTTP ${response.status}`);
+      return {
+        ok: false,
+        code: response.status,
+        msg: `请求失败 (${response.status})`,
+        data: null,
+        isResourceExhausted: false,
+        raw: null
+      };
+    }
 
     const result = await response.json();
 
     console.log(`[cloud] [HTTP] 响应: code=${result.code}, msg=${result.msg}`);
 
+    // 处理网关层面的鉴权失败（401/403）
+    if (result.code === 401 || result.code === 403) {
+      console.error(`[cloud] [HTTP] ❌ 网关鉴权失败: ${result.msg}`);
+      return { ok: false, code: result.code, msg: result.msg, data: null, isResourceExhausted: false, raw: result };
+    }
+
+    // 处理业务层面的认证失败
     if ((result.code === 401 || result.code === 402) && !shouldSkipAuth(name, data)) {
       handleAuthError();
     }

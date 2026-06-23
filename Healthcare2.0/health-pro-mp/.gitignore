@@ -19,3 +19,34 @@ dist
 *.njsproj
 *.sln
 *.sw?
+
+# ===== 开发临时文件（不提交到仓库）=====
+test-*.js
+test-data/
+scratch/
+cleanup-backup*/
+update-*.js
+reset-*.js
+fix_*.js
+clear-*.js
+add_*.js
+inspect_*.js
+deploy-*.js
+patch.js
+run-*.sh
+
+# 测试结果（保留结构，忽略内容）
+test-results/
+!test-results/.gitkeep
+
+# Playwright
+playwright-report/
+playwright/.cache/
+
+# 备份文件
+**/*.backup
+**/*.bak
+**/*.orig
+
+# 本地开发配置（含敏感信息）
+local-dev/

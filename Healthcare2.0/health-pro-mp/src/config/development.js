@@ -7,7 +7,7 @@ export const devConfig = {
     mockResponseDelay: 1000,
     maxRetries: isDevelopment ? 1 : 3
   },
-  
+
   errorHandling: {
     suppressWebsocketErrors: isDevelopment,
     showDetailedErrors: isDevelopment,
@@ -17,8 +17,22 @@ export const devConfig = {
   logging: {
     verbose: isDevelopment,
     filterErrors: ['WebSocket connection failed', 'closeSocket:fail', 'timeout']
+  },
+
+  // ===== HTTP Gateway 配置（H5 模式使用）=====
+  // 用于绕过 CLI 项目 H5 模式下 uniCloud SDK 注入问题
+  // 前端通过 HTTP 调用 http-gateway 云函数，在服务端转发 uniCloud.callFunction()
+  gateway: {
+    /** 网关完整 URL（含 PATH），从 uniCloud 控制台 → 云函数 → http-gateway 详情获取 */
+    url: 'https://env-00jy5xpjho0v.dev-hz.cloudbasefunction.cn/http-gateway',
+    /** API 密钥，需与 http-gateway 云函数中的 GATEWAY_API_KEY 保持一致 */
+    apiKey: 'hc_gateway_2026_secure'
   }
 }
+
+// 向后兼容：直接导出 gateway 配置
+export const gatewayUrl = devConfig.gateway.url
+export const gatewayApiKey = devConfig.gateway.apiKey
 
 /**
  * 开发模式下的错误过滤器
