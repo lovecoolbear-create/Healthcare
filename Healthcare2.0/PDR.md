@@ -455,6 +455,77 @@ Web 端被定义为 **"总店深度监控室"**，不仅仅是管理后台，更
 
 ---
 
+## 6. 技术架构约束与已知问题 (Technical Constraints & Known Issues)
+
+### 6.1 CLI 项目 H5 模式 uniCloud 调用限制
+
+#### 6.1.1 问题描述
+
+项目在 **2026-05-28** 升级到 Healthcare 2.0 时，从 **HBuilderX 原生项目** 被替换为 **uni-app CLI 项目**（使用 `uni-preset-vue` Vite 模板）。这导致通过「HBuilderX 运行菜单 → 运行到浏览器」时，`uniCloud.callFunction()` 报错：
+
+```
+SYS_ERR: uni-app cli项目内使用uniCloud需要使用HBuilderX的运行菜单运行项目，
+且需要在uniCloud目录关联服务空间
+```
+
+#### 6.1.2 根因分析
+
+| 对比项 | HBuilderX 原生项目 | CLI 项目（当前） |
+|--------|-------------------|-----------------|
+| 创建方式 | HBuilderX 新建向导 | `npx degit dcloudio/uni-preset-vue#vite` |
+| `package.json` name | 任意名称 | `uni-preset-vue` |
+| 构建工具 | HBuilderX 内部管理 | 自有 `vite.config.ts` |
+| 父目录 `about/package.json` | 有 → 被识别为内部项目 | 无 → 被识别为 CLI 项目 |
+| **H5 模式 uniCloud 注入** | 自动注入 `UNI_CLOUD_PROVIDER` | **不注入** → SDK 报错 |
+
+HBuilderX 通过检查项目父目录是否存在 `about/package.json`（name === 'about'）来区分项目类型。CLI 项目的父目录没有此文件，因此：
+
+1. `@dcloudio/vite-plugin-uni` 的 `initDefine()` 将 `process.env.UNI_CLOUD_PROVIDER` 设为空字符串
+2. Vite 编译时将 SDK 中的该变量替换为 `"[]"`（空数组）
+3. `uni-cloud.es.js` 运行时检测到配置数组长度 ≠ 1，拒绝初始化
+4. 所有云函数调用被替换为抛出错误函数
+
+**注意：小程序端不受影响**，因为小程序编译走的是独立的编译流程（直接读取 `manifest.json` 中的 uniCloud 配置），不依赖此环境变量注入。
+
+#### 6.1.3 解决方案：HTTP Gateway 云函数
+
+采用 **HTTP URL 化网关方案**，彻底绕过 CLI 项目的 SDK 注入限制。
+
+**架构：**
+```
+H5 浏览器 ──fetch(POST)──→ [http-gateway 云函数] ──uniCloud.callFunction()──→ 实际云函数
+                              ↑
+                        服务端执行，SDK 正常工作（读取 manifest.json 配置）
+小程序端 ──uniCloud.callFunction()──→ 直接调用（无变化）
+```
+
+**涉及文件：**
+
+| 文件 | 说明 |
+|------|------|
+| `uniCloud-alipay/cloudfunctions/http-gateway/index.js` | 网关云函数：接收 HTTP POST，在服务端转发 `uniCloud.callFunction()` |
+| `src/utils/cloud.ts` | 统一调用入口：H5 用 HTTP fetch 调网关，小程序用 SDK 直接调 |
+
+**部署要求（一次性操作）：**
+
+1. 在 HBuilderX 中右键 `http-gateway` → 「上传部署」
+2. 在 uniCloud 控制台 → 云函数 → http-gateway 详情 → 「设置URL的PATH部分」→ 输入 `/http-gateway`
+3. 记录默认域名并更新 `cloud.ts` 中的 `GATEWAY_URL` 常量
+
+当前已配置的默认域名：
+```
+https://env-00jy5xpjho0v.dev-hz.cloudbasefunction.cn/http-gateway
+```
+
+#### 6.1.4 注意事项
+
+- **不可回退为原生项目**：回退会丢失 Vite、TypeScript、Tailwind CSS 等工程化能力
+- **新增云函数无需额外配置**：所有云函数都通过同一个 http-gateway 入口转发，只需在请求中指定 `name` 字段即可
+- **跨域已处理**：网关云函数返回头包含 `Access-Control-Allow-Origin: *`
+- **安全建议**：生产环境应绑定自定义域名 + 添加鉴权机制（如 token 校验），避免暴露内部 API
+
+---
+
 **PDR 维护原则**: 本文档作为 UI/UX 的"唯一真理来源" (Single Source of Truth)。任何 UI 变更需先更新本文档。
 
 ---
