@@ -18,18 +18,31 @@ const isH5Mode = (): boolean => {
   return false;
 };
 
-// ===== 从环境配置读取 Gateway 参数 =====
-let GATEWAY_URL = '';
-let GATEWAY_API_KEY = '';
+// ===== 网关配置（H5 模式专用）=====
+// 配置来源：src/config/development.js → devConfig.gateway
+// 注意：Vite H5 环境不支持 require()，此处使用静态值
+//       修改网关地址或密钥时请同步更新 development.js
 
+/** 网关完整 URL（含 PATH） */
+let GATEWAY_URL = 'https://env-00jy5xpjho0v.dev-hz.cloudbasefunction.cn/http-gateway';
+
+/** API 密钥（需与 http-gateway 云函数中的 GATEWAY_API_KEY 一致） */
+let GATEWAY_API_KEY = 'hc_gateway_2026_secure';
+
+// 尝试从配置文件加载（覆盖默认值，兼容不同构建环境）
 try {
   // #ifdef H5
-  const config = require('./config/development.js').default || require('./config/development.js');
-  GATEWAY_URL = config.gatewayUrl || '';
-  GATEWAY_API_KEY = config.gatewayApiKey || '';
+  // 动态导入：Vite 会将此模块打包进 chunk
+  const mod = await import('./config/development.js');
+  const cfg = mod.default || mod;
+  if (cfg.devConfig?.gateway?.url) GATEWAY_URL = cfg.devConfig.gateway.url;
+  if (cfg.devConfig?.gateway?.apiKey) GATEWAY_API_KEY = cfg.devConfig.gateway.apiKey;
+  // 兼容旧导出格式
+  if (cfg.gatewayUrl) GATEWAY_URL = cfg.gatewayUrl;
+  if (cfg.gatewayApiKey) GATEWAY_API_KEY = cfg.gatewayApiKey;
   // #endif
-} catch (e) {
-  console.warn('[cloud] ⚠️ 无法加载网关配置，H5 模式将不可用');
+} catch (_e) {
+  // 使用上方默认值，静默失败
 }
 
 export const RESOURCE_EXHAUSTED_MESSAGE = '当前云资源额度已用完，请等待额度恢复或切换服务空间后重试';
