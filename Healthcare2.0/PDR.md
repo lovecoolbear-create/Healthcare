@@ -526,6 +526,39 @@ https://env-00jy5xpjho0v.dev-hz.cloudbasefunction.cn/http-gateway
 
 ---
 
+### 6.2 代码修改安全规范（强制遵守）
+
+> 本节记录项目历史中因修改引入回归 bug 的教训，**后续所有代码变更必须遵守**。
+
+#### 6.2.1 禁止在 H5 代码中使用 require()
+
+| 项目 | 说明 |
+|------|------|
+| **问题日期** | 2026-06-22 |
+| **问题描述** | 将 `cloud.ts` 中硬编码的 GATEWAY_URL 改为 `require('./config/development.js')` 动态加载后，H5 浏览器模式报错「网关未配置」 |
+| **根因** | Vite H5 构建环境是纯 ESM（ES Module），不支持 CommonJS 的 `require()`。运行时 `require is not defined` |
+| **修复方式** | 使用内联默认值作为兜底 + 动态 `import()` 作为可选覆盖 |
+
+**强制规则：**
+
+```
+❌ 禁止：const config = require('./xxx.js')
+✅ 允许：const config = await import('./xxx.js')   // 动态 import
+✅ 允许：import config from './xxx.js'              // 静态 import（顶层）
+✅ 允许：内联默认值 + import() 可选覆盖            // 最安全（当前采用）
+```
+
+#### 6.2.2 变更原则：先保证可用性，再优化
+
+| 原则 | 说明 |
+|------|------|
+| **最小改动** | 每次修改只解决一个问题，不顺便重构无关代码 |
+| **保留兜底** | 移除硬编码值前，必须确保替代方案在所有构建环境（H5/小程序/生产）下都能工作 |
+| **改完自测** | 涉及核心路径（如 cloud.ts、main.ts）的修改，必须确认 H5 和小程序两种模式都能正常运行 |
+| **不破坏已有功能** | 「优化」不能以牺牲「能用」为代价 |
+
+---
+
 **PDR 维护原则**: 本文档作为 UI/UX 的"唯一真理来源" (Single Source of Truth)。任何 UI 变更需先更新本文档。
 
 ---
